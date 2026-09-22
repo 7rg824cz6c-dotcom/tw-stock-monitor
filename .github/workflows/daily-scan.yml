@@ -1,0 +1,41 @@
+name: Daily TW Stock Scan
+
+on:
+  schedule:
+    # 00:00 UTC = 08:00 台灣時間,週一到週五
+    - cron: "0 0 * * 1-5"
+  workflow_dispatch: {}
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 安裝套件
+        run: pip install -r requirements.txt
+
+      - name: 從 Google Drive 下載 chips.db / trades.db
+        env:
+          GDRIVE_SA_KEY: ${{ secrets.GDRIVE_SA_KEY }}
+          GDRIVE_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
+        run: python gdrive_sync.py pull
+
+      - name: 執行掃描並寄信
+        env:
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          PYTHONIOENCODING: utf-8
+          PYTHONUTF8: "1"
+        run: python tw_stock_monitor_v2.py
+
+      - name: 把更新後的 chips.db / trades.db 傳回 Google Drive
+        if: always()
+        env:
+          GDRIVE_SA_KEY: ${{ secrets.GDRIVE_SA_KEY }}
+          GDRIVE_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
+        run: python gdrive_sync.py push

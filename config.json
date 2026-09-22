@@ -1,0 +1,62 @@
+{
+  "_說明": "改完存檔即可,不需要動主程式。",
+  "universe": {
+    "auto_scan": true,
+    "max_candidates": 150,
+    "min_price": 10.0,
+    "max_price": 3000.0,
+    "min_turnover_ntd": 30000000
+  },
+  "watchlist": [
+    "2330.TW",
+    "2454.TW",
+    "2603.TW",
+    "6488.TWO"
+  ],
+  "holdings": {
+    "REDACTED.TW": 0.0
+  },
+  "fundamentals": {
+    "pe_min": 0.0,
+    "pe_max": 30.0,
+    "pb_max": 5.0,
+    "yield_min": 0.0
+  },
+  "score_threshold": 65,
+  "max_alerts": 15,
+  "history_days": 400,
+  "notify": {
+    "console": true,
+    "save_csv": true,
+    "telegram": {
+      "enabled": false,
+      "bot_token": "",
+      "chat_id": ""
+    },
+    "email": {
+      "_密碼": "建議改用環境變數 GMAIL_APP_PASSWORD,不要寫在這個檔案裡",
+      "enabled": true,
+      "smtp_host": "smtp.gmail.com",
+      "smtp_port": 587,
+      "username": "REDACTED-EMAIL-1@example.com",
+      "password": "",
+      "to": "REDACTED-EMAIL-1@example.com"
+    }
+  },
+  "tech_only": false,
+  "_tech_only": "設為 true 則潛力股只篩科技與泛科技產業",
+  "paper": {
+    "_說明": "紙上交易:每天記錄訊號,隔天開盤成交。往前累積,無前視偏差。",
+    "enabled": true,
+    "capital": 1000000,
+    "position_pct": 0.1,
+    "max_positions": 10,
+    "stop_loss_atr": 2.0,
+    "take_profit_pct": null,
+    "max_hold_days": 180,
+    "entry_score": 65,
+    "exit_score": 30,
+    "_exit_below_ma20": "實測:設 true 會讓平均持有降到4天、年化-19%。強烈建議保持 false",
+    "exit_below_ma20": false
+  }
+}

@@ -1,0 +1,20 @@
+# venv
+.venv/
+__pycache__/
+*.pyc
+
+# local data / databases (synced via Google Drive in CI, not git)
+chips.db
+trades.db
+twdata/
+twdata_bad/
+reports/
+
+# secrets
+.env
+*.json.key
+service-account*.json
+
+# logs / local artifacts
+run.log
+email_preview.html
