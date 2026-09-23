@@ -95,7 +95,7 @@ def deep_merge(base, override):
 def load_config(path):
     cfg = DEFAULT_CONFIG
     if path and os.path.exists(path):
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, "r", encoding="utf-8-sig") as f:
             cfg = deep_merge(DEFAULT_CONFIG, json.load(f))
         log(f"已載入設定檔 {path}")
     else:
@@ -106,7 +106,7 @@ def load_config(path):
     local_path = os.path.join(os.path.dirname(os.path.abspath(path)), "config.local.json") \
         if path else "config.local.json"
     if os.path.exists(local_path):
-        with open(local_path, "r", encoding="utf-8") as f:
+        with open(local_path, "r", encoding="utf-8-sig") as f:
             cfg = deep_merge(cfg, json.load(f))
         log(f"已載入個人設定檔 {local_path}")
     return cfg
