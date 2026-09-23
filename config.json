@@ -40,7 +40,7 @@
       "smtp_port": 587,
       "username": "REDACTED-EMAIL-1@example.com",
       "password": "",
-      "to": "REDACTED-EMAIL-1@example.com"
+      "to": "REDACTED-EMAIL-1@example.com, REDACTED-EMAIL-2@example.com"
     }
   },
   "tech_only": false,
