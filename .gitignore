@@ -14,6 +14,7 @@ reports/
 .env
 *.json.key
 service-account*.json
+config.local.json
 
 # logs / local artifacts
 run.log

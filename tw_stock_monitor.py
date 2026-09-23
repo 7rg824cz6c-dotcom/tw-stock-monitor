@@ -100,6 +100,15 @@ def load_config(path):
         log(f"已載入設定檔 {path}")
     else:
         log("找不到設定檔,使用預設值")
+
+    # config.local.json 不進 git(見 .gitignore),放個人資料:
+    # holdings、watchlist、email 收件人等不想公開的內容,會覆蓋 config.json 同名欄位
+    local_path = os.path.join(os.path.dirname(os.path.abspath(path)), "config.local.json") \
+        if path else "config.local.json"
+    if os.path.exists(local_path):
+        with open(local_path, "r", encoding="utf-8") as f:
+            cfg = deep_merge(cfg, json.load(f))
+        log(f"已載入個人設定檔 {local_path}")
     return cfg
 
 

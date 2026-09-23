@@ -20,6 +20,11 @@ jobs:
       - name: 安裝套件
         run: pip install -r requirements.txt
 
+      - name: 寫入個人設定(watchlist / 持股 / 收件信箱)
+        env:
+          CONFIG_LOCAL_JSON: ${{ secrets.CONFIG_LOCAL_JSON }}
+        run: printf '%s' "$CONFIG_LOCAL_JSON" > config.local.json
+
       - name: 從 Google Drive 下載 chips.db / trades.db
         env:
           GDRIVE_CLIENT_ID: ${{ secrets.GDRIVE_CLIENT_ID }}
