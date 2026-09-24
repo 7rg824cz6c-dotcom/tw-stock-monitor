@@ -15,15 +15,17 @@ Google Drive 同步:在 GitHub Actions 這種每次都是全新環境的地方,
 把這三個值存成 GitHub Secrets。
 
 用法(CI 裡用):
-    python gdrive_sync.py pull   # 下載 chips.db / trades.db(不存在就略過)
-    python gdrive_sync.py push   # 上傳 chips.db / trades.db(不存在就略過)
+    python gdrive_sync.py pull   # 下載清單裡的檔案(不存在就略過)
+    python gdrive_sync.py push   # 上傳清單裡的檔案(不存在就略過)
 """
 
 import io
 import os
 import sys
 
-FILES = ["chips.db", "trades.db"]
+# 本機路徑(相對 repo 根目錄)。Drive 上用檔名(basename)辨識,
+# 所以子目錄底下的檔案只要 basename 不重複就不會互相蓋掉。
+FILES = ["chips.db", "trades.db", "news/news.db"]
 
 SCOPES = ["https://www.googleapis.com/auth/drive.file"]
 TOKEN_URI = "https://oauth2.googleapis.com/token"
@@ -71,10 +73,11 @@ def pull():
     from googleapiclient.http import MediaIoBaseDownload
 
     svc = _service()
-    for name in FILES:
-        file_id = _find_file(svc, name)
+    for path in FILES:
+        drive_name = os.path.basename(path)
+        file_id = _find_file(svc, drive_name)
         if not file_id:
-            print(f"[pull] {name} 在 Drive 上不存在,略過(第一次執行會這樣,正常)")
+            print(f"[pull] {drive_name} 在 Drive 上不存在,略過(第一次執行會這樣,正常)")
             continue
         request = svc.files().get_media(fileId=file_id)
         buf = io.BytesIO()
@@ -82,27 +85,31 @@ def pull():
         done = False
         while not done:
             _, done = downloader.next_chunk()
-        with open(name, "wb") as f:
+        parent = os.path.dirname(path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        with open(path, "wb") as f:
             f.write(buf.getvalue())
-        print(f"[pull] {name} 已下載 ({buf.getbuffer().nbytes} bytes)")
+        print(f"[pull] {path} 已下載 ({buf.getbuffer().nbytes} bytes)")
 
 
 def push():
     from googleapiclient.http import MediaFileUpload
 
     svc = _service()
-    for name in FILES:
-        if not os.path.exists(name):
-            print(f"[push] {name} 不存在,略過")
+    for path in FILES:
+        if not os.path.exists(path):
+            print(f"[push] {path} 不存在,略過")
             continue
-        file_id = _find_file(svc, name)
-        media = MediaFileUpload(name, resumable=True)
+        drive_name = os.path.basename(path)
+        file_id = _find_file(svc, drive_name)
+        media = MediaFileUpload(path, resumable=True)
         if file_id:
             svc.files().update(fileId=file_id, media_body=media).execute()
         else:
-            metadata = {"name": name}
+            metadata = {"name": drive_name}
             svc.files().create(body=metadata, media_body=media, fields="id").execute()
-        print(f"[push] {name} 已上傳 ({os.path.getsize(name)} bytes)")
+        print(f"[push] {path} 已上傳 ({os.path.getsize(path)} bytes)")
 
 
 if __name__ == "__main__":

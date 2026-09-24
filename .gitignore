@@ -9,15 +9,18 @@ trades.db
 twdata/
 twdata_bad/
 reports/
+news/news.db
 
 # secrets
 .env
+news/.env
 *.json.key
 service-account*.json
 config.local.json
 
 # logs / local artifacts
 run.log
+news/run.log
 email_preview.html
 
 # local dev tooling

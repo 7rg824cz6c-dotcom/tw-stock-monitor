@@ -1,0 +1,187 @@
+# 來源清單：優先使用 RSS / 官方公開資料，避免直接爬 HTML 列表頁
+#   fulltext: true  → 會抓正文（僅對授權明確、無付費牆的站開啟）
+#   always: true    → 跳過關鍵字預篩（官方公告類，標題常無關鍵字）
+#   region: tw / us / asia / eu
+
+sources:
+  # ============ 台灣媒體 ============
+  - {name: TechNews 科技新報,  url: "https://technews.tw/feed/", type: rss, region: tw, fulltext: true}
+  - {name: 鉅亨網 台股,        url: "https://news.cnyes.com/rss/v1/news/category/tw_stock", type: rss, region: tw, fulltext: true}
+  # MoneyDJ：SSL 憑證錯誤，暫時停用
+  # - {name: MoneyDJ 產業,       url: "https://www.moneydj.com/kmdj/rss/rsslist.aspx?svc=NW&fno=1", type: rss, region: tw, fulltext: false}
+  - {name: 經濟日報 產業,      url: "https://money.udn.com/rssfeed/news/1001/5591?ch=money", type: rss, region: tw, fulltext: false}
+  # 原廠 RSS 已失效（404），改用 Google News 站內查詢
+  - {name: DIGITIMES,          url: "https://news.google.com/rss/search?q=site:digitimes.com.tw+when:3d&hl=zh-TW&gl=TW&ceid=TW:zh-Hant", type: rss, region: tw, fulltext: false}
+  - {name: TrendForce 集邦,    url: "https://news.google.com/rss/search?q=site:trendforce.com.tw+when:3d&hl=zh-TW&gl=TW&ceid=TW:zh-Hant", type: rss, region: tw, fulltext: false}
+  - {name: MOPS 重大訊息,      url: "https://openapi.twse.com.tw/v1/opendata/t187ap04_L", type: mops_api, region: tw, always: true}
+
+  # ============ 國外終端客戶 / IC 設計（訂單源頭）============
+  # 這些公司一講話，台灣供應鏈就會動，是最優先的一手來源
+  - {name: NVIDIA Newsroom,    url: "https://nvidianews.nvidia.com/releases.xml", type: rss, region: us, fulltext: true, always: true}
+  - {name: AMD Press,          url: "https://ir.amd.com/rss/news-releases.xml", type: rss, region: us, fulltext: true, always: true}
+  - {name: Apple Newsroom,     url: "https://www.apple.com/newsroom/rss-feed.rss", type: rss, region: us, fulltext: true}   # 不設 always：會發大量運動娛樂稿
+  - {name: Intel Newsroom,     url: "https://newsroom.intel.com/feed", type: rss, region: us, fulltext: true, always: true}
+  - {name: Qualcomm News,      url: "https://news.google.com/rss/search?q=Qualcomm+(chip+OR+order+OR+partnership)+when:3d&hl=en-US&gl=US&ceid=US:en", type: rss, region: us, fulltext: false}
+  # Broadcom / Applied Materials：IR 頁擋非瀏覽器請求，連續逾時，暫時停用
+  # - {name: Broadcom News,      url: "https://investors.broadcom.com/rss/news-releases.xml", type: rss, region: us, fulltext: false, always: true}
+
+  # ============ 設備 / 材料（看資本支出循環）============
+  - {name: ASML 動態,          url: "https://news.google.com/rss/search?q=ASML+(EUV+OR+order+OR+bookings+OR+capacity)+when:3d&hl=en-US&gl=US&ceid=US:en", type: rss, region: eu, fulltext: false}
+  # - {name: Applied Materials,  url: "https://ir.appliedmaterials.com/rss/news-releases.xml", type: rss, region: us, fulltext: false, always: true}
+
+  # ============ 國外產業媒體 ============
+  - {name: Tom's Hardware,     url: "https://www.tomshardware.com/feeds/all", type: rss, region: us, fulltext: true}
+  - {name: EE Times,           url: "https://www.eetimes.com/feed/", type: rss, region: us, fulltext: false}
+  - {name: The Register HW,    url: "https://www.theregister.com/headlines.atom", type: rss, region: eu, fulltext: false}
+  - {name: SemiAnalysis,       url: "https://www.semianalysis.com/feed", type: rss, region: us, fulltext: false}
+  - {name: Nikkei Asia Tech,   url: "https://asia.nikkei.com/rss/feed/nar", type: rss, region: asia, fulltext: false}
+  - {name: 國際晶片要聞,       url: "https://news.google.com/rss/search?q=when:2d+(semiconductor+OR+chipmaker+OR+foundry)+(order+OR+capacity+OR+expansion+OR+contract)+-market+-forecast&hl=en-US&gl=US&ceid=US:en", type: rss, region: us, fulltext: false}
+
+  # ============ SEC 官方申報（8-K 常含重大訂單、供應協議）============
+  # CIK：NVIDIA 1045810 / Apple 320183 / AMD 2488 / Tesla 1318605 / Broadcom 1730168
+  - name: SEC 8-K NVIDIA
+    url: "https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001045810&type=8-K&dateb=&owner=include&count=20&output=atom"
+    type: rss
+    region: us
+    fulltext: false
+    always: true
+  - name: SEC 8-K Apple
+    url: "https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000320183&type=8-K&dateb=&owner=include&count=20&output=atom"
+    type: rss
+    region: us
+    fulltext: false
+    always: true
+
+  # ============ 社群與技術討論（tier: social，僅供參考、不計入台廠彙總）============
+  # Reddit 原生 RSS，免驗證。工程師與從業人員的討論，偶爾早於媒體
+  - {name: r/hardware,         url: "https://www.reddit.com/r/hardware/top/.rss?t=day", type: rss, region: us, tier: social, fulltext: false}
+  - {name: r/semiconductors,   url: "https://www.reddit.com/r/semiconductors/new/.rss", type: rss, region: us, tier: social, fulltext: false}
+  - {name: r/TSMC,             url: "https://www.reddit.com/r/TSMC/new/.rss", type: rss, region: us, tier: social, fulltext: false}
+
+  # Hacker News 官方 Algolia API，免金鑰。min_points 過濾沒人討論的貼文
+  - name: Hacker News
+    type: hn
+    region: us
+    tier: social
+    min_points: 40
+    terms: [semiconductor, TSMC, "chip fab", lithography, "AI accelerator"]
+    url: "https://hn.algolia.com/api/v1/search_by_date"
+
+  # ============ 人物發言追蹤（tier: statement，屬意向非既成事實）============
+  - name: 政策人物發言
+    type: people
+    region: us
+    lang: en
+    window: 2d
+    topics: [semiconductor, chip, tariff, "export control", Taiwan, "supply chain"]
+    people: ["Donald Trump", "Howard Lutnick", "Jensen Huang", "Lisa Su", "Tim Cook", "Sam Altman", "C.C. Wei"]
+    url: "https://news.google.com/rss/search"
+
+  - name: 台灣政經人物發言
+    type: people
+    region: tw
+    lang: zh
+    window: 3d
+    topics: [半導體, 晶片, 關稅, 投資, 產能, 供應鏈]
+    people: ["魏哲家", "黃仁勳", "郭智輝", "劉揚偉", "蔡力行"]
+    url: "https://news.google.com/rss/search"
+
+  # ============ 地緣與總經事件（不含半導體關鍵字也要收）============
+  - {name: 地緣風險, always: true, limit: 12, region: us, fulltext: false, type: rss,
+     url: "https://news.google.com/rss/search?q=(chip+OR+semiconductor+OR+supply+chain)+(war+OR+sanctions+OR+blockade+OR+export+ban+OR+earthquake+OR+strike)+when:2d&hl=en-US&gl=US&ceid=US:en"}
+  - {name: 關鍵原料, always: true, limit: 12, region: us, fulltext: false, type: rss,
+     url: "https://news.google.com/rss/search?q=(neon+OR+rare+earth+OR+gallium+OR+germanium+OR+palladium+OR+helium)+(export+OR+shortage+OR+price+OR+restriction)+when:3d&hl=en-US&gl=US&ceid=US:en"}
+  - {name: 航運與能源, always: true, limit: 12, region: us, fulltext: false, type: rss,
+     url: "https://news.google.com/rss/search?q=(Red+Sea+OR+shipping+rates+OR+Panama+Canal+OR+port+strike+OR+oil+price)+(disruption+OR+surge+OR+delay)+when:2d&hl=en-US&gl=US&ceid=US:en"}
+  - {name: 台海與兩岸, always: true, limit: 12, region: tw, fulltext: false, type: rss,
+     url: "https://news.google.com/rss/search?q=(台海+OR+兩岸+OR+出口管制+OR+稀土+OR+關稅)+(半導體+OR+供應鏈+OR+科技業)+when:3d&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"}
+  - {name: 天災與突發, always: true, limit: 12, region: tw, fulltext: false, type: rss,
+     url: "https://news.google.com/rss/search?q=(地震+OR+停電+OR+火災+OR+缺水+OR+颱風)+(科學園區+OR+晶圓廠+OR+半導體+OR+產線)+when:3d&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"}
+
+keywords:
+  # 中文
+  - 訂單
+  - 接單
+  - 拉貨
+  - 出貨
+  - 擴廠
+  - 產能
+  - 投片
+  - 資本支出
+  - 晶片
+  - 晶圓
+  - 封測
+  - 先進製程
+  - 伺服器
+  - 專利
+  - 量產
+  - 良率
+  - 供應鏈
+  - 認證
+  - 導入
+  - 財測
+  - 法說
+  - 關稅
+  - 出口管制
+  # 英文
+  - order
+  - bookings
+  - backlog
+  - shipment
+  - capacity
+  - capex
+  - guidance
+  - foundry
+  - semiconductor
+  - chip
+  - wafer
+  - fab
+  - yield
+  - tape-out
+  - HBM
+  - CoWoS
+  - data center
+  - supply chain
+  - export control
+  - tariff
+  - partnership
+  - contract
+
+# 市調公司與內容農場的樣板標題，命中就直接丟棄（不進資料庫、不耗 LLM 額度）
+spam_patterns:
+  - "market to grow"
+  - "market size"
+  - "market share, trends"
+  - "market report"
+  - "market research"
+  - "market analysis:"
+  - "market outlook"
+  - "cagr"
+  - "forecast to 20"
+  - "forecast period"
+  - "industry report"
+  - "global market"
+  - "in comparison to"
+  - "how investors are reacting"
+  - "stock analysis"
+  - "price target"
+  - "best deals"
+  - "deal alert"
+  - "review:"
+  - "hands-on"
+  - "benchmark leak"
+  - "mlb"
+  - "emmy"
+  - "apple arcade"
+  - "leagues cup"
+  - "major league"
+  - "nba 2k"
+  - "madden"
+  - "geforce now"
+  - "app store award"
+  - "etf"
+  - "stock of the day"
+  - "jim cramer"
+  - "undervalued"
+  - "just set a new"
+  - "1 semiconductor stock"
