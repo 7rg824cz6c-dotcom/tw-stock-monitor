@@ -187,6 +187,42 @@ GMAIL_APP_PASSWORD=abcdefghijklmnop
 
 時間是 **15:30**,不是 14:30——三大法人資料收盤後才公布。
 
+### 雲端自動化(GitHub Actions)
+
+這個 repo 本身就設定了雲端排程,不需要自己的電腦開機:
+
+| Workflow | 排程(台灣時間) | 做什麼 |
+|---|---|---|
+| `.github/workflows/daily-scan.yml` | 週一到週五 15:30 | 掃描 + 寄信,`chips.db`/`trades.db` 存 Google Drive |
+| `.github/workflows/news-crawler.yml` | 每天 08:00、20:00 | `news/` 底下的新聞爬蟲,`news/news.db` 也存 Google Drive |
+
+**設定方式**(在 repo 的 Settings → Secrets and variables → Actions 新增):
+
+| Secret | 內容 |
+|---|---|
+| `GMAIL_APP_PASSWORD` | Gmail 應用程式密碼 |
+| `CONFIG_LOCAL_JSON` | 本機 `config.local.json` 的完整內容(watchlist / 持股 / 收件信箱,不進 git) |
+| `NEWS_ENV_FILE` | 本機 `news/.env` 的完整內容(LLM 金鑰 / Gmail / 收件信箱) |
+| `GDRIVE_CLIENT_ID` / `GDRIVE_CLIENT_SECRET` / `GDRIVE_REFRESH_TOKEN` | 見下方「Google Drive 持久化」 |
+
+**Google Drive 持久化**:GitHub Actions 每次都是全新環境,`chips.db`、`trades.db`、`news/news.db` 這些會累積的資料庫,靠 `gdrive_sync.py` 在執行前後從你自己的 Google Drive 下載/上傳(用 OAuth 使用者授權,不是 service account——service account 沒有自己的儲存空間配額,建不了檔案)。一次性設定:
+
+```bash
+python gdrive_authorize.py path/to/client_secret.json
+```
+
+跑完把印出的 3 個值存成上面那 3 個 Secrets。詳細步驟(含 Google Cloud Console 操作)見 `gdrive_authorize.py` 開頭的說明。
+
+**網頁版(Streamlit Community Cloud)**:`app.py` 部署在 [share.streamlit.io](https://share.streamlit.io),同樣需要那 3 個 `GDRIVE_*` 值,但是存在 **Streamlit 自己的 App settings → Secrets**(跟 GitHub Secrets 是兩個獨立系統,要分別設定),格式是 TOML:
+
+```toml
+GDRIVE_CLIENT_ID = "..."
+GDRIVE_CLIENT_SECRET = "..."
+GDRIVE_REFRESH_TOKEN = "..."
+```
+
+網頁版只從 Drive **下載**、不會上傳——GitHub Actions 才是資料的唯一寫入者,避免兩邊同時寫造成衝突。
+
 ---
 
 ## 功能總覽
