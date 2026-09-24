@@ -39,6 +39,29 @@ CACHE = "last_scan.json"
 # 資料
 # ============================================================
 
+@st.cache_resource(show_spinner=False)
+def sync_chip_db_from_drive():
+    """從 Google Drive 拉 chips.db / trades.db(GitHub Actions 那邊持續累積的)。
+    只在這個 Streamlit 執行個體的生命週期內拉一次。沒設定 Secrets 就靜靜跳過
+    ——網頁版本來就能不靠這份資料獨立運作,只是籌碼分數會不可靠。"""
+    needed = ["GDRIVE_CLIENT_ID", "GDRIVE_CLIENT_SECRET", "GDRIVE_REFRESH_TOKEN"]
+    try:
+        secrets = {k: st.secrets[k] for k in needed}
+    except Exception:
+        return "未設定 Google Drive Secrets,略過同步(用本機 chips.db,或到 Streamlit App settings 補上)"
+    for k, v in secrets.items():
+        os.environ[k] = v
+    try:
+        import gdrive_sync
+        gdrive_sync.pull(files=["chips.db", "trades.db"])
+        return "已從 Google Drive 同步籌碼資料"
+    except Exception as e:
+        return f"Google Drive 同步失敗:{e}"
+
+
+sync_msg = sync_chip_db_from_drive()
+
+
 @st.cache_data(ttl=1800, show_spinner=False)
 def run_scan(cfg_json):
     cfg = json.loads(cfg_json)
@@ -103,6 +126,7 @@ def load_prices(blob, ticker):
 
 st.title("📊 台股綜合監控")
 st.caption("量化篩選工具,僅供個人研究。不構成投資建議。")
+st.caption(f"🔄 {sync_msg}")
 
 cfg = load_config("config.json")
 

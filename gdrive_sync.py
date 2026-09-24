@@ -69,11 +69,11 @@ def _find_file(svc, name):
     return files[0]["id"] if files else None
 
 
-def pull():
+def pull(files=None):
     from googleapiclient.http import MediaIoBaseDownload
 
     svc = _service()
-    for path in FILES:
+    for path in (files if files is not None else FILES):
         drive_name = os.path.basename(path)
         file_id = _find_file(svc, drive_name)
         if not file_id:
@@ -93,11 +93,11 @@ def pull():
         print(f"[pull] {path} 已下載 ({buf.getbuffer().nbytes} bytes)")
 
 
-def push():
+def push(files=None):
     from googleapiclient.http import MediaFileUpload
 
     svc = _service()
-    for path in FILES:
+    for path in (files if files is not None else FILES):
         if not os.path.exists(path):
             print(f"[push] {path} 不存在,略過")
             continue
