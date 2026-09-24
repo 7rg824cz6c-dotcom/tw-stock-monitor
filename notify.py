@@ -91,7 +91,12 @@ def build_html(buys, threshold, chip_days=0, rev_months=0, exits=None):
          "<div class='wrap'>",
          f"<h1>📊 台股綜合篩選 v3</h1>",
          f"<div class='sub'>{today} · 門檻 {threshold} 分 · "
-         f"籌碼 {chip_days} 日 / 營收 {rev_months} 月</div>"]
+         f"籌碼 {chip_days} 日 / 營收 {rev_months} 月</div>",
+         "<div style='margin:10px 0 4px'>"
+         "<a href='https://tw-stock-monitor.streamlit.app/' "
+         "style='display:inline-block;padding:8px 16px;background:#ff4b4b;"
+         "color:#fff;text-decoration:none;border-radius:6px;font-size:13px'>"
+         "🔍 開啟互動網頁(調整篩選條件 / 個股機率區間)</a></div>"]
 
     if chip_days < 20 or rev_months < 4:
         miss = []
@@ -184,7 +189,8 @@ def build_html(buys, threshold, chip_days=0, rev_months=0, exits=None):
 
 def build_text(buys, threshold):
     """純文字備援,給不顯示 HTML 的信箱。"""
-    L = [f"台股綜合篩選 {datetime.now():%Y-%m-%d}(門檻 {threshold} 分)", ""]
+    L = [f"台股綜合篩選 {datetime.now():%Y-%m-%d}(門檻 {threshold} 分)",
+         "互動網頁:https://tw-stock-monitor.streamlit.app/", ""]
     if not buys:
         L.append("今天沒有標的達到門檻。")
     for i, s in enumerate(buys, 1):
