@@ -135,6 +135,16 @@ if not res:
     st.warning("沒有符合條件的結果。試著降低覆蓋率要求或分數門檻。")
     st.stop()
 
+# ---- 產業目錄:依公司類別篩選/搜尋 ----
+all_industries = sorted({r.get("industry") or "未分類" for r in res})
+picked_industries = st.sidebar.multiselect(
+    "產業目錄", all_industries, default=all_industries,
+    help="依公司類別篩選,取消勾選可縮小選取/搜尋範圍")
+res = [r for r in res if (r.get("industry") or "未分類") in picked_industries]
+if not res:
+    st.warning("篩選後沒有符合條件的股票,試著勾選更多產業。")
+    st.stop()
+
 # ---- 資料健康度 ----
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("掃描檔數", len(data["results"]))
@@ -155,7 +165,8 @@ tab1, tab2 = st.tabs(["📋 掃描結果", "🔍 個股分析"])
 
 with tab1:
     df = pd.DataFrame([{
-        "代號": r["ticker"], "名稱": r["name"], "分數": r["score"],
+        "代號": r["ticker"], "名稱": r["name"],
+        "產業": r.get("industry") or "未分類", "分數": r["score"],
         "覆蓋%": r["coverage"], "收盤": r["price"],
         "停損距%": round((r["stop_loss"] / r["price"] - 1) * 100, 1)
                    if r.get("price") else None,
@@ -166,8 +177,10 @@ with tab1:
         "營收年增%": r["rev_yoy"],
     } for r in res])
     # 用 Streamlit 原生欄位格式,不依賴 matplotlib
-    st.dataframe(
+    st.caption("點一列可在「🔍 個股分析」分頁直接看到該檔的細節")
+    event = st.dataframe(
         df, width="stretch", height=520, hide_index=True,
+        on_select="rerun", selection_mode="single-row",
         column_config={
             "分數": st.column_config.ProgressColumn(
                 "分數", min_value=0, max_value=100, format="%d"),
@@ -179,13 +192,24 @@ with tab1:
                 format="%d", help="≥90 過度延伸,≤25 未延伸。本專案證據最強的因子"),
             "營收年增%": st.column_config.NumberColumn(format="%+.1f%%"),
         })
+    if event.selection.rows:
+        st.session_state["picked_ticker"] = res[event.selection.rows[0]]["ticker"]
     st.download_button("下載 CSV", df.to_csv(index=False).encode("utf-8-sig"),
                        f"scan_{datetime.now():%Y%m%d}.csv", "text/csv")
 
 with tab2:
-    pick = st.selectbox("選擇個股",
-                        [f"{r['ticker']} {r['name']} ({r['score']}分)" for r in res])
-    r = res[[f"{x['ticker']} {x['name']} ({x['score']}分)" for x in res].index(pick)]
+    # 依產業分組排序,選單標籤把公司類別標在名稱後面,可直接輸入搜尋
+    ordered = sorted(res, key=lambda x: (x.get("industry") or "未分類", -x["score"]))
+    tickers_in_order = [r["ticker"] for r in ordered]
+    labels = [f"{r['ticker']} {r['name']}({r.get('industry') or '未分類'})  {r['score']}分"
+              for r in ordered]
+    default_idx = 0
+    picked_ticker = st.session_state.get("picked_ticker")
+    if picked_ticker in tickers_in_order:
+        default_idx = tickers_in_order.index(picked_ticker)
+    pick = st.selectbox("選擇個股(依產業分組,可輸入代號/名稱搜尋)",
+                        labels, index=default_idx)
+    r = ordered[labels.index(pick)]
     d = load_prices(data["prices"], r["ticker"])
 
     a, b, c = st.columns([1, 1, 2])
