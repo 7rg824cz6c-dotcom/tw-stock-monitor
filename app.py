@@ -190,7 +190,9 @@ tab1, tab2 = st.tabs(["📋 掃描結果", "🔍 個股分析"])
 with tab1:
     df = pd.DataFrame([{
         "代號": r["ticker"], "名稱": r["name"],
-        "產業": r.get("industry") or "未分類", "分數": r["score"],
+        "產業": r.get("industry") or "未分類",
+        "AI供應鏈": r.get("ai_role") or "",
+        "分數": r["score"],
         "覆蓋%": r["coverage"], "收盤": r["price"],
         "停損距%": round((r["stop_loss"] / r["price"] - 1) * 100, 1)
                    if r.get("price") else None,
@@ -240,6 +242,11 @@ with tab2:
     a.metric("分數", r["score"], f"覆蓋 {r['coverage']}%")
     b.metric("收盤", r["price"], f"RS {r['rs']}")
     c.metric("Weinstein 階段", r["stage"])
+
+    if r.get("ai_role"):
+        st.info(f"🤖 AI供應鏈角色:{r['ai_role']}"
+                "(僅供參考,依 news/supply_chain_map.yaml 客觀統計"
+                "引用來源數,非計分項目、非投資建議)")
 
     st.subheader("評分明細")
     x, y = st.columns(2)

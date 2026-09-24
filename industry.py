@@ -21,6 +21,9 @@
     這仍然是篩選,不是推薦。
 """
 
+import os
+import re
+
 import numpy as np
 import pandas as pd
 
@@ -90,6 +93,69 @@ def refine(code, industry):
     if industry == "半導體業":
         return SEMI_SUBSECTOR.get(code, industry)
     return industry
+
+
+# ============================================================
+# AI 生態系角色
+# ============================================================
+# 借用 news/supply_chain_map.yaml(新聞爬蟲那份對照表)裡跟 AI 直接
+# 相關的幾個區塊,算出每檔股票在 AI 供應鏈裡扮演的角色。
+# 「特別標註」不是我主觀判斷護城河,是客觀算出來的:
+# 同時被 3 個以上不同 AI 需求來源(NVIDIA/AMD/Broadcom ASIC/CSP資本支出/
+# 記憶體)引用,代表這家公司不是繫在單一客戶身上,跨多個 AI 需求來源都
+# 找得到它,汰換難度自然比只服務一個客戶的公司高。
+AI_SECTIONS = ["NVIDIA", "AMD", "Broadcom_ASIC", "CSP資本支出", "記憶體"]
+NOTABLE_MIN_SECTIONS = 3
+
+_AI_ROLE_CACHE = None
+
+
+def _parse_ai_roles():
+    """回傳 {code: {"name":.., "roles": {role,...}, "sections": {section,...}}}。
+    supply_chain_map.yaml 讀不到就回傳空字典 —— 這是加分資訊,不是必要資料。"""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        "news", "supply_chain_map.yaml")
+    if not os.path.exists(path):
+        return {}
+    try:
+        import yaml
+        with open(path, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+    except Exception:
+        return {}
+
+    out = {}
+    for section in AI_SECTIONS:
+        block = data.get(section)
+        if not isinstance(block, dict):
+            continue
+        for role, entries in block.items():
+            if role == "說明" or not isinstance(entries, list):
+                continue
+            for entry in entries:
+                m = re.match(r"^(.*\S)\s+(\d{4,6})$", str(entry).strip())
+                if not m:
+                    continue
+                name, code = m.group(1), m.group(2)
+                rec = out.setdefault(code, {"name": name, "roles": set(), "sections": set()})
+                rec["roles"].add(role)
+                rec["sections"].add(section)
+    return out
+
+
+def ai_ecosystem(code):
+    """回傳這檔股票的 AI 供應鏈角色描述,查無資料回傳 None。
+    格式例:"★ 代工(AMD/Broadcom_ASIC/NVIDIA)" —— ★ 代表同時被 3 個以上
+    不同 AI 需求來源引用。"""
+    global _AI_ROLE_CACHE
+    if _AI_ROLE_CACHE is None:
+        _AI_ROLE_CACHE = _parse_ai_roles()
+    rec = _AI_ROLE_CACHE.get(code)
+    if not rec:
+        return None
+    roles = "/".join(sorted(rec["roles"]))
+    star = "★ " if len(rec["sections"]) >= NOTABLE_MIN_SECTIONS else ""
+    return f"{star}{roles}({'/'.join(sorted(rec['sections']))})"
 
 
 # ============================================================

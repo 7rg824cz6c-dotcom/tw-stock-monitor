@@ -278,6 +278,7 @@ def analyse_v2(ticker, df, bench_ret6m, fund, rs, chip, rev=None, indprem=None):
         "chip_days": ch.get("days", 0),
         "rev_yoy": ry, "rev_streak": rst, "rev_ym": rv.get("ym"),
         "industry": IND.refine(ticker.split(".")[0], rv.get("industry", "")),
+        "ai_role": IND.ai_ecosystem(ticker.split(".")[0]),
         "atr_pct": round(float(a.iloc[-1]) / px * 100, 2),
         "stop_loss": round(px - 2 * float(a.iloc[-1]), 2),
         "pe": None if np.isnan(pe) else round(pe, 1),

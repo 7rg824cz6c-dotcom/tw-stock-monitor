@@ -140,6 +140,9 @@ def build_html(buys, threshold, chip_days=0, rev_months=0, exits=None):
         if s.get("range20"):
             lo, hi = s["range20"]
             rows.append(("20日70%區間", f"{lo} ~ {hi}"))
+        if s.get("ai_role"):
+            rows.append(("AI供應鏈", s["ai_role"] +
+                         " <span class='cov'>(僅供參考,非計分項目)</span>"))
         h.append("<table>" + "".join(
             f"<tr><td class='k'>{k}</td><td>{v}</td></tr>" for k, v in rows) + "</table>")
 
