@@ -2,9 +2,14 @@ name: Daily TW Stock Scan
 
 on:
   schedule:
-    # 06:00 UTC = 14:00 台灣時間(收盤後30分鐘),週一到週五
-    - cron: "0 6 * * 1-5"
+    # 07:30 UTC = 15:30 台灣時間,週一到週五
+    # 不能用 14:00:三大法人買賣超資料是收盤後才公布,14:00 抓不到當天籌碼(README 也是這樣寫的)
+    - cron: "30 7 * * 1-5"
   workflow_dispatch: {}
+
+concurrency:
+  group: daily-scan
+  cancel-in-progress: false
 
 jobs:
   scan:
@@ -16,6 +21,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: "pip"
 
       - name: 安裝套件
         run: pip install -r requirements.txt
