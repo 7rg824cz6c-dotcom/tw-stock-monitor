@@ -39,10 +39,10 @@ CACHE = "last_scan.json"
 # 資料
 # ============================================================
 
-@st.cache_resource(show_spinner=False)
+@st.cache_data(ttl=1800, show_spinner=False)
 def sync_chip_db_from_drive():
     """從 Google Drive 拉 chips.db / trades.db(GitHub Actions 那邊持續累積的)。
-    只在這個 Streamlit 執行個體的生命週期內拉一次。沒設定 Secrets 就靜靜跳過
+    跟 run_scan 用同樣的快取時間,Secrets 補上後最多 30 分鐘或重開 app 就會生效
     ——網頁版本來就能不靠這份資料獨立運作,只是籌碼分數會不可靠。"""
     needed = ["GDRIVE_CLIENT_ID", "GDRIVE_CLIENT_SECRET", "GDRIVE_REFRESH_TOKEN"]
     try:
