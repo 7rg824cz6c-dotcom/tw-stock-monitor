@@ -134,9 +134,12 @@ with st.sidebar:
     st.header("設定")
     cfg["score_threshold"] = st.slider("分數門檻", 0, 100, cfg["score_threshold"], 5)
     cfg["universe"]["max_candidates"] = st.slider(
-        "掃描檔數", 30, 400, cfg["universe"]["max_candidates"], 10)
+        "掃描檔數", 30, 1200,
+        min(cfg["universe"]["max_candidates"], 1200), 10,
+        help="預設是全市場都掃(1200,大於實際上市檔數),不篩選")
     cfg["fundamentals"]["pe_max"] = st.number_input(
-        "本益比上限", 5.0, 100.0, float(cfg["fundamentals"]["pe_max"]))
+        "本益比上限", 5.0, 1_000_000_000.0, float(cfg["fundamentals"]["pe_max"]),
+        help="預設是不篩選(極大值),想排除高本益比股票再調小")
     min_cov = st.slider("最低資料覆蓋率 %", 0, 100, 0, 5,
                         help="覆蓋率低的分數是從較少證據推出來的,可靠度較低")
     st.divider()
@@ -169,6 +172,20 @@ if not res:
     st.warning("篩選後沒有符合條件的股票,試著勾選更多產業。")
     st.stop()
 
+# ---- 特殊事件目錄:新上市 / 新聞提及 / 價量異常(客觀規則算出來的標籤,
+# 不是真的知道公司發生了什麼事,細節見 industry.py 的 special_tags()) ----
+all_tags = sorted({t for r in res for t in (r.get("special_tags") or [])})
+if all_tags:
+    picked_tags = st.sidebar.multiselect(
+        "特殊事件目錄", all_tags,
+        help="勾選後只顯示有該標籤的股票;不勾就不篩選,顯示全部")
+    if picked_tags:
+        res = [r for r in res
+              if any(t in picked_tags for t in (r.get("special_tags") or []))]
+        if not res:
+            st.warning("篩選後沒有符合條件的股票。")
+            st.stop()
+
 # ---- 資料健康度 ----
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("掃描檔數", len(data["results"]))
@@ -191,6 +208,7 @@ def _row_dict(r):
         "代號": r["ticker"], "名稱": r["name"],
         "產業": r.get("industry") or "未分類",
         "AI供應鏈": r.get("ai_role") or "",
+        "特殊事件": " ".join(r.get("special_tags") or []),
         "分數": r["score"],
         "覆蓋%": r["coverage"], "收盤": r["price"],
         "停損距%": round((r["stop_loss"] / r["price"] - 1) * 100, 1)
@@ -269,6 +287,10 @@ with tab2:
         st.info(f"🤖 AI供應鏈角色:{r['ai_role']}"
                 "(僅供參考,依 news/supply_chain_map.yaml 客觀統計"
                 "引用來源數,非計分項目、非投資建議)")
+    if r.get("special_tags"):
+        st.info(f"🏷️ 特殊事件標籤:{' '.join(r['special_tags'])}"
+                "(規則客觀算出來的,不代表真的了解發生了什麼事,"
+                "自己再查證細節)")
 
     st.subheader("評分明細")
     x, y = st.columns(2)

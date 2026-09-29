@@ -159,6 +159,85 @@ def ai_ecosystem(code):
 
 
 # ============================================================
+# 特殊事件目錄:新上市 / 新聞提及 / 價量異常
+# ============================================================
+# 三個都是客觀規則算出來的,不是真的知道公司發生了什麼事:
+#   新上市   資料長度接近分析門檻(260日),概略推測掛牌未滿約1.5年,
+#            不是真正的上市日期資料。
+#   新聞提及 news/news.db 裡最近幾天的文章有沒有明確點名這檔代號
+#            (LLM 分析時填的 tw_tickers 欄位),不是我自己判斷的。
+#   價量異常 今日成交量對比過去20日均量的倍數。
+
+RECENTLY_LISTED_DAYS = 380       # 略高於 260 的分析門檻
+VOLUME_ANOMALY_MULT = 3.0
+
+_NEWS_TICKER_CACHE = None
+
+
+def recently_listed(price_history_len):
+    return price_history_len < RECENTLY_LISTED_DAYS
+
+
+def volume_anomaly(volume_series, mult=VOLUME_ANOMALY_MULT):
+    if len(volume_series) < 21:
+        return False
+    avg20 = volume_series.iloc[-21:-1].mean()
+    if not avg20 or avg20 <= 0:
+        return False
+    return bool(volume_series.iloc[-1] >= mult * avg20)
+
+
+def load_recent_news_tickers(days=3, min_importance=3):
+    """回傳最近幾天新聞裡明確提到的台股代號集合。news.db 不存在/讀不到
+    就回傳空集合——這是加分資訊,不是必要資料,新聞爬蟲沒跑過也不影響。"""
+    global _NEWS_TICKER_CACHE
+    if _NEWS_TICKER_CACHE is not None:
+        return _NEWS_TICKER_CACHE
+
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        "news", "news.db")
+    out = set()
+    if os.path.exists(path):
+        try:
+            import json
+            import sqlite3
+            from datetime import datetime, timedelta, timezone
+
+            con = sqlite3.connect(path)
+            tz = timezone(timedelta(hours=8))
+            since = (datetime.now(tz) - timedelta(days=days)).isoformat()
+            rows = con.execute(
+                "SELECT tw_tickers FROM articles "
+                "WHERE fetched_at > ? AND analyzed = 1 AND importance >= ?",
+                (since, min_importance)).fetchall()
+            con.close()
+            for (raw,) in rows:
+                try:
+                    for t in json.loads(raw or "[]"):
+                        code = str(t).strip().split(".")[0]
+                        if code:
+                            out.add(code)
+                except Exception:
+                    continue
+        except Exception:
+            pass
+    _NEWS_TICKER_CACHE = out
+    return out
+
+
+def special_tags(code, price_history_len, volume_series):
+    """回傳這檔股票的特殊事件標籤 list(可能是空的)。"""
+    tags = []
+    if recently_listed(price_history_len):
+        tags.append("🆕新上市")
+    if code in load_recent_news_tickers():
+        tags.append("📰新聞提及")
+    if volume_anomaly(volume_series):
+        tags.append("⚡價量異常")
+    return tags
+
+
+# ============================================================
 # 產業總覽
 # ============================================================
 

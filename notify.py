@@ -120,6 +120,9 @@ def _card(s):
     if s.get("ai_role"):
         rows.append(("AI供應鏈", s["ai_role"] +
                      " <span class='cov'>(僅供參考,非計分項目)</span>"))
+    if s.get("special_tags"):
+        rows.append(("特殊事件", " ".join(s["special_tags"]) +
+                     " <span class='cov'>(規則算出來的,非計分項目)</span>"))
     h.append("<table>" + "".join(
         f"<tr><td class='k'>{k}</td><td>{v}</td></tr>" for k, v in rows) + "</table>")
 
@@ -210,6 +213,8 @@ def _text_line(i, s, L):
         L.append(f"   月營收年增 {s['rev_yoy']:+.1f}%")
     if s.get("ai_role"):
         L.append(f"   AI供應鏈:{s['ai_role']}(僅供參考,非計分項目)")
+    if s.get("special_tags"):
+        L.append(f"   特殊事件:{' '.join(s['special_tags'])}(規則算出來的,非計分項目)")
     L.append(f"   ✔ {' / '.join(s.get('hits', [])[:4])}")
     if s.get("risks"):
         L.append(f"   ⚠ {' / '.join(s['risks'])}")
