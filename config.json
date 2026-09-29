@@ -1,18 +1,19 @@
 {
   "_說明": "改完存檔即可,不需要動主程式。",
+  "_universe說明": "全市場都掃(不再用本益比/股價/成交量篩掉任何股票),跑得比只掃前N名久很多",
   "universe": {
     "auto_scan": true,
-    "max_candidates": 150,
-    "min_price": 10.0,
-    "max_price": 3000.0,
-    "min_turnover_ntd": 30000000
+    "max_candidates": 1200,
+    "min_price": 0.0,
+    "max_price": 100000.0,
+    "min_turnover_ntd": 0
   },
   "watchlist": [],
   "holdings": {},
   "fundamentals": {
-    "pe_min": 0.0,
-    "pe_max": 30.0,
-    "pb_max": 5.0,
+    "pe_min": -1000000000.0,
+    "pe_max": 1000000000.0,
+    "pb_max": 1000000000.0,
     "yield_min": 0.0
   },
   "score_threshold": 65,

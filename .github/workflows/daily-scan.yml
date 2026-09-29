@@ -14,7 +14,7 @@ concurrency:
 jobs:
   scan:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60  # 全市場1000+檔都掃,比只掃前150名久很多
     steps:
       - uses: actions/checkout@v4
 
