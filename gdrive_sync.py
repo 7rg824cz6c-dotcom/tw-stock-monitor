@@ -22,10 +22,30 @@ Google Drive 同步:在 GitHub Actions 這種每次都是全新環境的地方,
 import io
 import os
 import sys
+import time
 
 # 本機路徑(相對 repo 根目錄)。Drive 上用檔名(basename)辨識,
 # 所以子目錄底下的檔案只要 basename 不重複就不會互相蓋掉。
 FILES = ["chips.db", "trades.db", "news/news.db"]
+
+PULL_RETRIES = 3
+PULL_RETRY_DELAY = 3  # 秒
+
+
+def _sqlite_ok(path):
+    """檢查下載下來的 .db 檔沒有損毀。GitHub Actions 跟 Streamlit Cloud
+    可能同時在讀寫同一份檔案(排程執行中,網頁剛好也在同步),偶爾會
+    抓到寫一半的版本——這不是資料真的壞了,重抓一次通常就正常。"""
+    if not path.endswith(".db"):
+        return True
+    import sqlite3
+    try:
+        con = sqlite3.connect(path)
+        ok = con.execute("PRAGMA integrity_check").fetchone() == ("ok",)
+        con.close()
+        return ok
+    except sqlite3.Error:
+        return False
 
 SCOPES = ["https://www.googleapis.com/auth/drive.file"]
 TOKEN_URI = "https://oauth2.googleapis.com/token"
@@ -69,9 +89,24 @@ def _find_file(svc, name):
     return files[0]["id"] if files else None
 
 
-def pull(files=None):
+def _download_once(svc, file_id, path):
     from googleapiclient.http import MediaIoBaseDownload
 
+    request = svc.files().get_media(fileId=file_id)
+    buf = io.BytesIO()
+    downloader = MediaIoBaseDownload(buf, request)
+    done = False
+    while not done:
+        _, done = downloader.next_chunk()
+    parent = os.path.dirname(path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+    with open(path, "wb") as f:
+        f.write(buf.getvalue())
+    return buf.getbuffer().nbytes
+
+
+def pull(files=None):
     svc = _service()
     for path in (files if files is not None else FILES):
         drive_name = os.path.basename(path)
@@ -79,18 +114,25 @@ def pull(files=None):
         if not file_id:
             print(f"[pull] {drive_name} 在 Drive 上不存在,略過(第一次執行會這樣,正常)")
             continue
-        request = svc.files().get_media(fileId=file_id)
-        buf = io.BytesIO()
-        downloader = MediaIoBaseDownload(buf, request)
-        done = False
-        while not done:
-            _, done = downloader.next_chunk()
-        parent = os.path.dirname(path)
-        if parent:
-            os.makedirs(parent, exist_ok=True)
-        with open(path, "wb") as f:
-            f.write(buf.getvalue())
-        print(f"[pull] {path} 已下載 ({buf.getbuffer().nbytes} bytes)")
+
+        n, ok = 0, False
+        for attempt in range(1, PULL_RETRIES + 1):
+            n = _download_once(svc, file_id, path)
+            if _sqlite_ok(path):
+                ok = True
+                break
+            if attempt < PULL_RETRIES:
+                print(f"[pull] {path} 第 {attempt} 次下載後檢查損毀"
+                     f"(可能跟別的執行撞到寫入時間),{PULL_RETRY_DELAY} 秒後重試")
+                time.sleep(PULL_RETRY_DELAY)
+
+        if ok:
+            print(f"[pull] {path} 已下載 ({n} bytes)")
+        else:
+            os.remove(path)
+            print(f"[pull] ⚠ {path} 重試 {PULL_RETRIES} 次後仍然損毀,"
+                 "已刪除損毀檔案,程式會當成第一次執行、從空的資料庫開始"
+                 "(這次籌碼分數會不可靠,但不會讓整個掃描失敗)")
 
 
 def push(files=None):
