@@ -185,10 +185,9 @@ if data["chip_days"] < 20:
 if data["rev_months"] < 4:
     st.warning("營收資料不足 4 個月,成長趨勢分數會被略過(不計入分母)。每月執行會自動累積。")
 
-tab1, tab2 = st.tabs(["📋 掃描結果", "🔍 個股分析"])
 
-with tab1:
-    df = pd.DataFrame([{
+def _row_dict(r):
+    return {
         "代號": r["ticker"], "名稱": r["name"],
         "產業": r.get("industry") or "未分類",
         "AI供應鏈": r.get("ai_role") or "",
@@ -201,23 +200,46 @@ with tab1:
         "乖離分位": (r.get("dev") or {}).get("pct60"),
         "外資連買": r["foreign_streak"],
         "營收年增%": r["rev_yoy"],
-    } for r in res])
+    }
+
+
+_TABLE_COLCFG = {
+    "分數": st.column_config.ProgressColumn(
+        "分數", min_value=0, max_value=100, format="%d"),
+    "覆蓋%": st.column_config.NumberColumn(format="%d%%"),
+    "收盤": st.column_config.NumberColumn(format="%.2f"),
+    "停損距%": st.column_config.NumberColumn(
+        format="%+.1f%%", help="停損參考價距現價的百分比(2×ATR)"),
+    "乖離分位": st.column_config.NumberColumn(
+        format="%d", help="≥90 過度延伸,≤25 未延伸。本專案證據最強的因子"),
+    "營收年增%": st.column_config.NumberColumn(format="%+.1f%%"),
+}
+
+# ---- 觀察清單:watchlist 裡的股票不管有沒有達門檻都固定列出來,
+# 跟信件那份「🔭 觀察清單」邏輯一致,不會因為分數不夠就被埋進大表格裡 ----
+watchlist_set = set(cfg.get("watchlist") or [])
+watch_stocks = [r for r in res if r["ticker"] in watchlist_set]
+if watch_stocks:
+    st.subheader(f"🔭 觀察清單({len(watch_stocks)} 檔,含未達門檻)")
+    wdf = pd.DataFrame([_row_dict(r) for r in watch_stocks])
+    wevent = st.dataframe(
+        wdf, width="stretch", hide_index=True,
+        on_select="rerun", selection_mode="single-row",
+        column_config=_TABLE_COLCFG, key="watch_table")
+    if wevent.selection.rows:
+        st.session_state["picked_ticker"] = watch_stocks[wevent.selection.rows[0]]["ticker"]
+    st.divider()
+
+tab1, tab2 = st.tabs(["📋 掃描結果", "🔍 個股分析"])
+
+with tab1:
+    df = pd.DataFrame([_row_dict(r) for r in res])
     # 用 Streamlit 原生欄位格式,不依賴 matplotlib
     st.caption("點一列可在「🔍 個股分析」分頁直接看到該檔的細節")
     event = st.dataframe(
         df, width="stretch", height=520, hide_index=True,
         on_select="rerun", selection_mode="single-row",
-        column_config={
-            "分數": st.column_config.ProgressColumn(
-                "分數", min_value=0, max_value=100, format="%d"),
-            "覆蓋%": st.column_config.NumberColumn(format="%d%%"),
-            "收盤": st.column_config.NumberColumn(format="%.2f"),
-            "停損距%": st.column_config.NumberColumn(
-                format="%+.1f%%", help="停損參考價距現價的百分比(2×ATR)"),
-            "乖離分位": st.column_config.NumberColumn(
-                format="%d", help="≥90 過度延伸,≤25 未延伸。本專案證據最強的因子"),
-            "營收年增%": st.column_config.NumberColumn(format="%+.1f%%"),
-        })
+        column_config=_TABLE_COLCFG, key="scan_table")
     if event.selection.rows:
         st.session_state["picked_ticker"] = res[event.selection.rows[0]]["ticker"]
     st.download_button("下載 CSV", df.to_csv(index=False).encode("utf-8-sig"),

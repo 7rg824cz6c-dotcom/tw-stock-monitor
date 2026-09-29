@@ -235,7 +235,20 @@ def build_universe(cfg):
     log(f"基本面預篩後剩 {len(df)} 檔")
 
     df["ticker"] = df["code"] + ".TW"
-    tickers = df["ticker"].tolist() + [t for t in watch if t not in set(df["ticker"])]
+    watch_missing = [t for t in watch if t not in set(df["ticker"])]
+    if watch_missing:
+        # watchlist 裡沒進預篩名單的股票,名稱另外從全市場基本面表(fund,
+        # 尚未套流動性/估值篩選)補上,不然 fund.get(ticker) 會是空字典,
+        # 卡片跟表格上完全看不到公司名稱
+        name_map = fund.set_index("code")["name"].to_dict()
+        extra = pd.DataFrame([
+            {"ticker": t, "code": t.split(".")[0],
+             "name": name_map.get(t.split(".")[0], "")}
+            for t in watch_missing
+        ])
+        df = pd.concat([df, extra], ignore_index=True)
+
+    tickers = df["ticker"].tolist()
     return tickers, df.set_index("ticker")
 
 
