@@ -453,8 +453,17 @@ def run(cfg, update_chips=True):
             r["ind_pct"] = rk["ind_pct"]; r["ind_n"] = rk["ind_n"]
 
     buys = [r for r in res if r["score"] >= cfg["score_threshold"]][:cfg["max_alerts"]]
+
+    # watchlist 裡的股票就算沒達門檻也固定顯示——放進 watchlist 代表
+    # 你本來就想追蹤這檔,不該因為沒達標就在信裡完全看不到它
+    buy_tickers = {b["ticker"] for b in buys}
+    watch_extra = [r for r in res
+                   if r["ticker"] in set(cfg.get("watchlist") or [])
+                   and r["ticker"] not in buy_tickers]
+    watch_extra.sort(key=lambda x: x["score"], reverse=True)
+
     # 為入選標的補上 20 日機率區間
-    for b in buys:
+    for b in buys + watch_extra:
         try:
             pr = price_range(hist[b["ticker"]]["Close"], 20)
             if pr:
@@ -507,8 +516,9 @@ def run(cfg, update_chips=True):
     subject = (f"台股篩選 {datetime.now():%m/%d} — {n_hit} 檔達標"
                if n_hit else f"台股篩選 {datetime.now():%m/%d} — 無標的達標")
     N.send_gmail(cfg, subject,
-                 N.build_html(buys, cfg["score_threshold"], nday, nrev),
-                 N.build_text(buys, cfg["score_threshold"]))
+                 N.build_html(buys, cfg["score_threshold"], nday, nrev,
+                             watchlist_extra=watch_extra),
+                 N.build_text(buys, cfg["score_threshold"], watchlist_extra=watch_extra))
     send_telegram(cfg, rep)      # 若 config 仍啟用 Telegram 則一併發送
     return rep
 

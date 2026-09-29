@@ -85,7 +85,77 @@ def _color(score):
     return "g" if score >= 70 else ("y" if score >= 55 else "r")
 
 
-def build_html(buys, threshold, chip_days=0, rev_months=0, exits=None):
+def _card(s):
+    """一檔股票的卡片 HTML(list of str)。buys 跟 watchlist_extra 共用。"""
+    h = []
+    cov = (f" <span class='cov'>覆蓋 {s['coverage']}%"
+           + (f",缺{s['missing']}" if s.get("missing") else "") + "</span>") \
+        if s.get("coverage", 100) < 100 else ""
+    h.append("<div class='card'>")
+    h.append(f"<div class='hd'><span class='tk'>{s['ticker']} "
+             f"{s['name']}{cov}</span>"
+             f"<span class='sc {_color(s['score'])}'>{s['score']}</span></div>")
+    rows = [("收盤", f"{s['price']}"),
+            ("停損參考", f"{s['stop_loss']}"
+                         f" <span class='cov'>({_pct(s['stop_loss'], s['price'])},"
+                         f"2×ATR)</span>"),
+            ("RS 評等", s["rs"]),
+            ("Weinstein", s["stage"]),
+            ("Minervini", s["minervini"])]
+    fs = s.get("foreign_streak", 0)
+    rows.append(("外資", f"連{abs(fs)}{'買' if fs > 0 else '賣'}"
+                 f",5日 {s.get('foreign_net_5', 0):+.0f} 張" if fs
+                 else f"5日 {s.get('foreign_net_5', 0):+.0f} 張"))
+    if s.get("trust_net_5"):
+        rows.append(("投信", f"5日 {s['trust_net_5']:+.0f} 張"))
+    if s.get("rev_yoy") is not None:
+        ym = s.get("rev_ym") or 0
+        rows.append((f"月營收 {ym // 100}/{ym % 100:02d}",
+                     f"年增 {s['rev_yoy']:+.1f}%"))
+    if s.get("margin_chg_5") is not None:
+        rows.append(("融資 5 日", f"{s['margin_chg_5']:+.1f}%"))
+    if s.get("range20"):
+        lo, hi = s["range20"]
+        rows.append(("20日70%區間", f"{lo} ~ {hi}"))
+    if s.get("ai_role"):
+        rows.append(("AI供應鏈", s["ai_role"] +
+                     " <span class='cov'>(僅供參考,非計分項目)</span>"))
+    h.append("<table>" + "".join(
+        f"<tr><td class='k'>{k}</td><td>{v}</td></tr>" for k, v in rows) + "</table>")
+
+    # 「接下來看哪裡」—— 對歷史的描述,不是預測
+    sup, res = s.get("support") or [], s.get("resistance") or []
+    if sup or res or s.get("price"):
+        h.append("<div class='watch'><b>接下來看哪裡</b><table>")
+        if res:
+            for lb, (p, n) in zip(("近端壓力", "第二壓力"), res[:2]):
+                h.append(f"<tr><td class='k'>{lb}</td><td>{p} "
+                         f"<span class='cov'>({_pct(p, s['price'])},"
+                         f"測試 {n} 次)</span></td></tr>")
+        else:
+            h.append("<tr><td class='k'>近端壓力</td>"
+                     "<td class='cov'>已在一年高點附近,上方無參考價位</td></tr>")
+        if sup:
+            for lb, (p, n) in zip(("近端支撐", "第二支撐"), sup[:2]):
+                h.append(f"<tr><td class='k'>{lb}</td><td>{p} "
+                         f"<span class='cov'>({_pct(p, s['price'])},"
+                         f"測試 {n} 次)</span></td></tr>")
+        else:
+            h.append("<tr><td class='k'>近端支撐</td>"
+                     "<td class='cov'>一年內無可辨識的轉折低點</td></tr>")
+        h.append("</table><div class='note'>被測試 N 次是歷史事實,"
+                 "不保證下次會守住。</div></div>")
+    if s.get("hits"):
+        h.append("<ul>" + "".join(
+            f"<li class='hit'>✔ {x}</li>" for x in s["hits"][:5]) + "</ul>")
+    if s.get("risks"):
+        h.append("<ul>" + "".join(
+            f"<li class='risk'>⚠ {x}</li>" for x in s["risks"]) + "</ul>")
+    h.append("</div>")
+    return h
+
+
+def build_html(buys, threshold, chip_days=0, rev_months=0, exits=None, watchlist_extra=None):
     today = f"{datetime.now():%Y-%m-%d}"
     h = [f"<html><head><meta charset='utf-8'><style>{CSS}</style></head><body>",
          "<div class='wrap'>",
@@ -111,70 +181,13 @@ def build_html(buys, threshold, chip_days=0, rev_months=0, exits=None):
         h.append("<div class='card'>今天沒有標的達到門檻。空手也是一種部位。</div>")
 
     for s in buys:
-        cov = (f" <span class='cov'>覆蓋 {s['coverage']}%"
-               + (f",缺{s['missing']}" if s.get("missing") else "") + "</span>") \
-            if s.get("coverage", 100) < 100 else ""
-        h.append("<div class='card'>")
-        h.append(f"<div class='hd'><span class='tk'>{s['ticker']} "
-                 f"{s['name']}{cov}</span>"
-                 f"<span class='sc {_color(s['score'])}'>{s['score']}</span></div>")
-        rows = [("收盤", f"{s['price']}"),
-                ("停損參考", f"{s['stop_loss']}"
-                             f" <span class='cov'>({_pct(s['stop_loss'], s['price'])},"
-                             f"2×ATR)</span>"),
-                ("RS 評等", s["rs"]),
-                ("Weinstein", s["stage"]),
-                ("Minervini", s["minervini"])]
-        fs = s.get("foreign_streak", 0)
-        rows.append(("外資", f"連{abs(fs)}{'買' if fs > 0 else '賣'}"
-                     f",5日 {s.get('foreign_net_5', 0):+.0f} 張" if fs
-                     else f"5日 {s.get('foreign_net_5', 0):+.0f} 張"))
-        if s.get("trust_net_5"):
-            rows.append(("投信", f"5日 {s['trust_net_5']:+.0f} 張"))
-        if s.get("rev_yoy") is not None:
-            ym = s.get("rev_ym") or 0
-            rows.append((f"月營收 {ym // 100}/{ym % 100:02d}",
-                         f"年增 {s['rev_yoy']:+.1f}%"))
-        if s.get("margin_chg_5") is not None:
-            rows.append(("融資 5 日", f"{s['margin_chg_5']:+.1f}%"))
-        if s.get("range20"):
-            lo, hi = s["range20"]
-            rows.append(("20日70%區間", f"{lo} ~ {hi}"))
-        if s.get("ai_role"):
-            rows.append(("AI供應鏈", s["ai_role"] +
-                         " <span class='cov'>(僅供參考,非計分項目)</span>"))
-        h.append("<table>" + "".join(
-            f"<tr><td class='k'>{k}</td><td>{v}</td></tr>" for k, v in rows) + "</table>")
+        h.extend(_card(s))
 
-        # 「接下來看哪裡」—— 對歷史的描述,不是預測
-        sup, res = s.get("support") or [], s.get("resistance") or []
-        if sup or res or s.get("price"):
-            h.append("<div class='watch'><b>接下來看哪裡</b><table>")
-            if res:
-                for lb, (p, n) in zip(("近端壓力", "第二壓力"), res[:2]):
-                    h.append(f"<tr><td class='k'>{lb}</td><td>{p} "
-                             f"<span class='cov'>({_pct(p, s['price'])},"
-                             f"測試 {n} 次)</span></td></tr>")
-            else:
-                h.append("<tr><td class='k'>近端壓力</td>"
-                         "<td class='cov'>已在一年高點附近,上方無參考價位</td></tr>")
-            if sup:
-                for lb, (p, n) in zip(("近端支撐", "第二支撐"), sup[:2]):
-                    h.append(f"<tr><td class='k'>{lb}</td><td>{p} "
-                             f"<span class='cov'>({_pct(p, s['price'])},"
-                             f"測試 {n} 次)</span></td></tr>")
-            else:
-                h.append("<tr><td class='k'>近端支撐</td>"
-                         "<td class='cov'>一年內無可辨識的轉折低點</td></tr>")
-            h.append("</table><div class='note'>被測試 N 次是歷史事實,"
-                     "不保證下次會守住。</div></div>")
-        if s.get("hits"):
-            h.append("<ul>" + "".join(
-                f"<li class='hit'>✔ {x}</li>" for x in s["hits"][:5]) + "</ul>")
-        if s.get("risks"):
-            h.append("<ul>" + "".join(
-                f"<li class='risk'>⚠ {x}</li>" for x in s["risks"]) + "</ul>")
-        h.append("</div>")
+    if watchlist_extra:
+        h.append("<h1 style='font-size:16px;margin-top:22px'>🔭 觀察清單"
+                 "(未達門檻,因為在 watchlist 裡固定顯示)</h1>")
+        for s in watchlist_extra:
+            h.extend(_card(s))
 
     if exits:
         h.append("<h1 style='font-size:16px;margin-top:22px'>⚠️ 持股警示</h1>")
@@ -190,21 +203,32 @@ def build_html(buys, threshold, chip_days=0, rev_months=0, exits=None):
     return "".join(h)
 
 
-def build_text(buys, threshold):
+def _text_line(i, s, L):
+    L.append(f"{i}. {s['ticker']} {s['name']}  {s['score']} 分")
+    L.append(f"   收盤 {s['price']} | 停損 {s['stop_loss']} | RS {s['rs']}")
+    if s.get("rev_yoy") is not None:
+        L.append(f"   月營收年增 {s['rev_yoy']:+.1f}%")
+    if s.get("ai_role"):
+        L.append(f"   AI供應鏈:{s['ai_role']}(僅供參考,非計分項目)")
+    L.append(f"   ✔ {' / '.join(s.get('hits', [])[:4])}")
+    if s.get("risks"):
+        L.append(f"   ⚠ {' / '.join(s['risks'])}")
+    L.append("")
+
+
+def build_text(buys, threshold, watchlist_extra=None):
     """純文字備援,給不顯示 HTML 的信箱。"""
     L = [f"台股綜合篩選 {datetime.now():%Y-%m-%d}(門檻 {threshold} 分)",
          "互動網頁:https://tw-stock-monitor.streamlit.app/", ""]
     if not buys:
         L.append("今天沒有標的達到門檻。")
     for i, s in enumerate(buys, 1):
-        L.append(f"{i}. {s['ticker']} {s['name']}  {s['score']} 分")
-        L.append(f"   收盤 {s['price']} | 停損 {s['stop_loss']} | RS {s['rs']}")
-        if s.get("rev_yoy") is not None:
-            L.append(f"   月營收年增 {s['rev_yoy']:+.1f}%")
-        L.append(f"   ✔ {' / '.join(s.get('hits', [])[:4])}")
-        if s.get("risks"):
-            L.append(f"   ⚠ {' / '.join(s['risks'])}")
+        _text_line(i, s, L)
+    if watchlist_extra:
+        L.append("── 🔭 觀察清單(未達門檻,因為在 watchlist 裡固定顯示)──")
         L.append("")
+        for i, s in enumerate(watchlist_extra, 1):
+            _text_line(i, s, L)
     L.append("僅供個人研究,不構成投資建議。")
     return "\n".join(L)
 
