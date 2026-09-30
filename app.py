@@ -60,6 +60,9 @@ def load_prefs():
                 return json.load(f)
         except Exception:
             pass
+    # 故意不預先塞 score_threshold/max_candidates/pe_max/min_cov 這幾個 key
+    # 進預設值——用 .get(key, fallback) 讀取時,key 不存在才會用 fallback,
+    # 塞了 None 進去反而會讓「使用者存的 0」被誤判成「沒存過」。
     return {"favorites": [], "preferred_industries": []}
 
 
@@ -294,16 +297,30 @@ prefs = load_prefs()
 
 with st.sidebar:
     st.header("設定")
-    cfg["score_threshold"] = st.slider("分數門檻", 0, 100, cfg["score_threshold"], 5)
+    _default_threshold = prefs.get("score_threshold", cfg["score_threshold"])
+    _default_candidates = min(prefs.get("max_candidates", cfg["universe"]["max_candidates"]), 1200)
+    _default_pe = prefs.get("pe_max", cfg["fundamentals"]["pe_max"])
+    _default_cov = prefs.get("min_cov", 0)
+
+    cfg["score_threshold"] = st.slider("分數門檻", 0, 100, _default_threshold, 5)
     cfg["universe"]["max_candidates"] = st.slider(
-        "掃描檔數", 30, 1200,
-        min(cfg["universe"]["max_candidates"], 1200), 10,
+        "掃描檔數", 30, 1200, _default_candidates, 10,
         help="預設是全市場都掃(1200,大於實際上市檔數),不篩選")
     cfg["fundamentals"]["pe_max"] = st.number_input(
-        "本益比上限", 5.0, 1_000_000_000.0, float(cfg["fundamentals"]["pe_max"]),
+        "本益比上限", 5.0, 1_000_000_000.0, float(_default_pe),
         help="預設是不篩選(極大值),想排除高本益比股票再調小")
-    min_cov = st.slider("最低資料覆蓋率 %", 0, 100, 0, 5,
+    min_cov = st.slider("最低資料覆蓋率 %", 0, 100, _default_cov, 5,
                         help="覆蓋率低的分數是從較少證據推出來的,可靠度較低")
+    if st.button("💾 存為預設設定", width="stretch",
+                 help="下次打開網頁會直接套用現在這幾個滑桿的數值,不用每次重調"):
+        prefs.update({
+            "score_threshold": cfg["score_threshold"],
+            "max_candidates": cfg["universe"]["max_candidates"],
+            "pe_max": cfg["fundamentals"]["pe_max"],
+            "min_cov": min_cov,
+        })
+        save_prefs(prefs)
+        st.success("已存(下次打開自動套用)")
     st.divider()
     go = st.button("🔄 執行掃描", type="primary", width="stretch")
     st.caption("掃描約需 2-4 分鐘,結果快取 30 分鐘")
