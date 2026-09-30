@@ -138,9 +138,13 @@ def render_zones(price, support, resistance):
 
 @st.cache_data(ttl=1800, show_spinner=False)
 def sync_chip_db_from_drive():
-    """從 Google Drive 拉 chips.db / trades.db(GitHub Actions 那邊持續累積的)。
-    跟 run_scan 用同樣的快取時間,Secrets 補上後最多 30 分鐘或重開 app 就會生效
-    ——網頁版本來就能不靠這份資料獨立運作,只是籌碼分數會不可靠。"""
+    """從 Google Drive 拉 chips.db / trades.db / news/news.db(GitHub Actions
+    那邊持續累積的)。跟 run_scan 用同樣的快取時間,Secrets 補上後最多 30
+    分鐘或重開 app 就會生效——網頁版本來就能不靠這些資料獨立運作,只是
+    籌碼分數不可靠、「新聞提及」標籤永遠不會出現。
+    news/news.db 被 .gitignore 排除、不在 git 版本裡,Streamlit Cloud 是
+    全新 clone,不特別從 Drive 拉這個檔案的話,「特殊事件」裡的新聞提及
+    標籤在網頁版上永遠是空的——這裡就是在修這個。"""
     needed = ["GDRIVE_CLIENT_ID", "GDRIVE_CLIENT_SECRET", "GDRIVE_REFRESH_TOKEN"]
     try:
         secrets = {k: st.secrets[k] for k in needed}
@@ -150,8 +154,8 @@ def sync_chip_db_from_drive():
         os.environ[k] = v
     try:
         import gdrive_sync
-        gdrive_sync.pull(files=["chips.db", "trades.db"])
-        return "已從 Google Drive 同步籌碼資料"
+        gdrive_sync.pull(files=["chips.db", "trades.db", "news/news.db"])
+        return "已從 Google Drive 同步籌碼資料與新聞資料"
     except Exception as e:
         return f"Google Drive 同步失敗:{e}"
 
