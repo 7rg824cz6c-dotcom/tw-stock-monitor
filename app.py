@@ -174,6 +174,60 @@ def render_zones(price, support, resistance):
     st.caption("被測試次數多是歷史事實,不保證下次會守住;呈現的是結構位置描述,不是操作目標。")
 
 
+def render_kline_chart(d, r):
+    """K 線圖(蠟燭圖)+ 成交量,疊加支撐/壓力/停損參考線。"""
+    if d is None or d.empty:
+        return
+    try:
+        import plotly.graph_objects as go
+        from plotly.subplots import make_subplots
+    except ImportError:
+        st.caption("安裝 plotly 可看 K 線圖:pip install plotly")
+        return
+
+    st.markdown("**K 線圖 / 成交量**")
+    recent = d.tail(120)
+    up = recent["Close"] >= recent["Open"]
+    vol_colors = ["#e05a5a" if u else "#3fae5a" for u in up]
+
+    fig = make_subplots(
+        rows=2, cols=1, shared_xaxes=True, row_heights=[0.72, 0.28],
+        vertical_spacing=0.03)
+    fig.add_trace(go.Candlestick(
+        x=recent.index, open=recent["Open"], high=recent["High"],
+        low=recent["Low"], close=recent["Close"], name="股價",
+        increasing_line_color="#e05a5a", decreasing_line_color="#3fae5a"),
+        row=1, col=1)
+    fig.add_trace(go.Bar(
+        x=recent.index, y=recent["Volume"], name="成交量",
+        marker_color=vol_colors, showlegend=False), row=2, col=1)
+
+    for p, n in (r.get("resistance") or [])[:2]:
+        fig.add_hline(y=p, line=dict(color="tomato", dash="dot", width=1),
+                      annotation_text=f"壓力 {p}(測試{n}次)", row=1, col=1)
+    for p, n in (r.get("support") or [])[:2]:
+        fig.add_hline(y=p, line=dict(color="seagreen", dash="dot", width=1),
+                      annotation_text=f"支撐 {p}(測試{n}次)", row=1, col=1)
+    if r.get("stop_loss"):
+        fig.add_hline(y=r["stop_loss"], line=dict(color="orange", width=1.5),
+                      annotation_text=f"停損參考 {r['stop_loss']}", row=1, col=1)
+
+    fig.update_layout(
+        height=480, xaxis_rangeslider_visible=False,
+        margin=dict(t=20, b=20), hovermode="x unified",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02))
+    fig.update_yaxes(title_text="股價", row=1, col=1)
+    fig.update_yaxes(title_text="成交量", row=2, col=1)
+    st.plotly_chart(fig, width="stretch")
+
+    st.caption(
+        "圖解:🔴 紅K = 收盤價≥開盤價(收紅) · 🟢 綠K = 收盤價<開盤價(收黑)"
+        "(台股慣例紅漲綠跌)。橘線 = 停損參考價(收盤價 − 2×ATR)。"
+        "紅色虛線 = 歷史壓力、綠色虛線 = 歷史支撐,取自最近一年的轉折高低點,"
+        "被測試次數越多不代表越會守住。下方長條為成交量,顏色對應當天漲跌。"
+        "顯示最近 120 個交易日(約半年)。")
+
+
 # ============================================================
 # 資料
 # ============================================================
@@ -459,8 +513,11 @@ if favorite_stocks:
     st.divider()
 
 # ---- 觀察清單:watchlist 裡的股票不管有沒有達門檻都固定列出來,
-# 跟信件那份「🔭 觀察清單」邏輯一致,不會因為分數不夠就被埋進大表格裡 ----
-watchlist_set = set(cfg.get("watchlist") or [])
+# 跟信件那份「🔭 觀察清單」邏輯一致,不會因為分數不夠就被埋進大表格裡。
+# 來源有兩個:config.local.json 的 watchlist(本機專用,不進 git、網頁版看不到)
+# 跟 preferences.json 的 watchlist(在「🔍 個股分析」頁加的,跟我的最愛一樣
+# 同步 Google Drive,網頁版跟本機都看得到)----
+watchlist_set = set(cfg.get("watchlist") or []) | set(prefs.get("watchlist") or [])
 watch_stocks = [r for r in res if r["ticker"] in watchlist_set]
 if watch_stocks:
     st.subheader(f"🔭 觀察清單({len(watch_stocks)} 檔,含未達門檻)")
@@ -509,15 +566,27 @@ with tab2:
     c.metric("Weinstein 階段", r["stage"])
 
     is_fav = r["ticker"] in set(prefs.get("favorites") or [])
-    if st.button("💔 移除最愛" if is_fav else "⭐ 加入最愛", key="fav_toggle"):
+    is_watch = r["ticker"] in set(prefs.get("watchlist") or [])
+    _fb1, _fb2 = st.columns(2)
+    if _fb1.button("💔 移除最愛" if is_fav else "⭐ 加入最愛", key="fav_toggle",
+                   width="stretch"):
         favs = set(prefs.get("favorites") or [])
         favs.discard(r["ticker"]) if is_fav else favs.add(r["ticker"])
         prefs["favorites"] = sorted(favs)
         save_prefs(prefs)
         st.rerun()
+    if _fb2.button("🔭 移除觀察" if is_watch else "🔭 加入觀察", key="watch_toggle",
+                   width="stretch",
+                   help="跟我的最愛一樣存在 preferences.json,網頁版跟本機都看得到"):
+        wl = set(prefs.get("watchlist") or [])
+        wl.discard(r["ticker"]) if is_watch else wl.add(r["ticker"])
+        prefs["watchlist"] = sorted(wl)
+        save_prefs(prefs)
+        st.rerun()
 
     render_why_moved(r)
     render_zones(r.get("price"), r.get("support"), r.get("resistance"))
+    render_kline_chart(d, r)
 
     if r.get("ai_role"):
         st.info(f"🤖 AI供應鏈角色:{r['ai_role']}"
