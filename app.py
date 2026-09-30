@@ -159,8 +159,29 @@ def sync_chip_db_from_drive():
 sync_msg = sync_chip_db_from_drive()
 
 
+def _code_version():
+    """算分邏輯散在好幾個被 import 的模組裡(tw_stock_monitor_v2/industry/
+    chips/revenue/valuation/trading),st.cache_data 只認 run_scan 這個函式
+    自己的原始碼有沒有變,不會遞迴偵測它呼叫的外部模組——改了那些檔案、
+    部署上去,快取還是會繼續吐舊邏輯算出來的舊結果。把這些檔案的
+    mtime+大小做成一個字串當 run_scan 的參數,檔案一有變動這組字串就變,
+    快取自然失效,不用每次改完都手動點「執行掃描」清快取。"""
+    files = ["tw_stock_monitor.py", "tw_stock_monitor_v2.py", "industry.py",
+             "chips.py", "revenue.py", "valuation.py", "trading.py", "forecast.py"]
+    base = os.path.dirname(os.path.abspath(__file__))
+    parts = []
+    for f in files:
+        p = os.path.join(base, f)
+        try:
+            st_ = os.stat(p)
+            parts.append(f"{f}:{st_.st_mtime_ns}:{st_.st_size}")
+        except OSError:
+            parts.append(f"{f}:missing")
+    return "|".join(parts)
+
+
 @st.cache_data(ttl=1800, show_spinner=False)
-def run_scan(cfg_json):
+def run_scan(cfg_json, code_version):
     cfg = json.loads(cfg_json)
     con = C.init_db(); REV.init_db()
     try:
@@ -248,7 +269,7 @@ if go:
 
 with st.spinner("下載資料並計算中…"):
     try:
-        data = run_scan(json.dumps(cfg))
+        data = run_scan(json.dumps(cfg), _code_version())
     except Exception as e:
         st.error(f"掃描失敗:{e}")
         st.info("請先確認:`python chips.py --check` 與 `python revenue.py --check`")
