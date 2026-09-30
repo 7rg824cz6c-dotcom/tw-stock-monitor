@@ -34,6 +34,103 @@ st.set_page_config(page_title="台股監控", page_icon="📊", layout="wide")
 
 CACHE = "last_scan.json"
 
+# ============================================================
+# 「今天為什麼漲/跌」+「來看哪裡」卡片(深藍漸層,手機截圖參考款)
+# ============================================================
+
+_WM_CSS = """
+<style>
+.wm-bullet{background:linear-gradient(135deg,#1e3a5f,#2d1b4e);border-radius:12px;
+  padding:12px 16px;margin-bottom:8px;}
+.wm-label{font-weight:600;font-size:15px;}
+.wm-detail{font-size:13px;color:#b8c4d9;margin-top:4px;margin-left:16px;}
+.wm-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:8px;}
+.zone-row{display:flex;gap:12px;flex-wrap:wrap;margin-top:4px;}
+.zone-card{background:linear-gradient(160deg,#16213e,#1a2f52);border-radius:14px;
+  padding:16px;flex:1;min-width:190px;}
+.zone-title{font-size:12px;color:#8fa8d0;margin-bottom:10px;}
+.zone-line{margin-bottom:10px;}
+.zone-line b{font-size:19px;color:#fff;}
+.zone-sub{font-size:11px;color:#7c8db5;display:block;margin-top:2px;}
+.zone-note{font-size:11px;color:#7c8db5;margin-top:6px;line-height:1.4;}
+</style>
+"""
+
+_WM_DOT_COLOR = {"purple": "#a78bfa", "cyan": "#22d3ee", "pink": "#f472b6"}
+
+
+def render_why_moved(r):
+    """今天為什麼漲/跌:純敘事,不是原因分析、不是預測。"""
+    bullets = r.get("why_moved") or []
+    if not bullets:
+        return
+    st.markdown(_WM_CSS, unsafe_allow_html=True)
+    if any("收紅" in b[1] for b in bullets):
+        title = "今天為什麼漲?"
+    elif any("收黑" in b[1] for b in bullets):
+        title = "今天為什麼跌?"
+    else:
+        title = "今天動態"
+    st.markdown(f"**{title}**")
+    html = "".join(
+        f"<div class='wm-bullet'>"
+        f"<span class='wm-dot' style='background:{_WM_DOT_COLOR[c]}'></span>"
+        f"<span class='wm-label' style='color:{_WM_DOT_COLOR[c]}'>{label}</span>"
+        f"<div class='wm-detail'>{detail}</div></div>"
+        for c, label, detail in bullets)
+    st.markdown(html, unsafe_allow_html=True)
+    st.caption("純粹描述今天發生了什麼,不是原因分析、也不是預測接下來會怎樣。")
+
+
+def render_zones(price, support, resistance):
+    """支撐/壓力卡片。被測試次數多是歷史事實,不保證下次會守住。"""
+    if not price or (not support and not resistance):
+        return
+    near_sup = support[0] if support else None
+    second_sup = support[1] if len(support) > 1 else None
+    near_res = resistance[0] if resistance else None
+    second_res = resistance[1] if len(resistance) > 1 else None
+    is_key_zone = bool(near_res and abs(near_res[0] / price - 1) <= 0.05)
+
+    def pct(p):
+        return f"{(p / price - 1) * 100:+.1f}%"
+
+    def zone_line(label, entry):
+        if not entry:
+            return ""
+        p, n = entry
+        prefix = f"{label} " if label else ""
+        return (f"<div class='zone-line'>{prefix}<b>{p}</b>"
+               f"<span class='zone-sub'>{pct(p)},測試 {n} 次</span></div>")
+
+    st.markdown(_WM_CSS, unsafe_allow_html=True)
+    st.markdown("**來看哪裡?**")
+
+    sup_body = zone_line("近端支撐", near_sup) + zone_line("第二支撐", second_sup)
+    if not sup_body:
+        sup_body = "<div class='zone-sub'>一年內無可辨識的轉折低點</div>"
+    cards = [("🛡️ 支撐觀察", sup_body, "")]
+
+    if near_res:
+        title = "⚡ 關鍵突破/壓力共擠區" if is_key_zone else "近端壓力"
+        note = ("此處同時是突破關鍵位與壓力共擠區,站上與否是關鍵觀察點,不是操作目標"
+               if is_key_zone else "")
+        cards.append((title, zone_line("", near_res), note))
+    else:
+        cards.append(("近端壓力", "<div class='zone-sub'>已在一年高點附近,上方無參考價位</div>", ""))
+
+    if second_res:
+        cards.append(("🔥 第二壓力", zone_line("", second_res), ""))
+    else:
+        cards.append(("🔥 第二壓力", "<div class='zone-sub'>目前沒有可觀察的價位</div>", ""))
+
+    html = "<div class='zone-row'>" + "".join(
+        f"<div class='zone-card'><div class='zone-title'>{t}</div>{body}"
+        + (f"<div class='zone-note'>{note}</div>" if note else "") + "</div>"
+        for t, body, note in cards) + "</div>"
+    st.markdown(html, unsafe_allow_html=True)
+    st.caption("被測試次數多是歷史事實,不保證下次會守住;呈現的是結構位置描述,不是操作目標。")
+
 
 # ============================================================
 # 資料
@@ -282,6 +379,9 @@ with tab2:
     a.metric("分數", r["score"], f"覆蓋 {r['coverage']}%")
     b.metric("收盤", r["price"], f"RS {r['rs']}")
     c.metric("Weinstein 階段", r["stage"])
+
+    render_why_moved(r)
+    render_zones(r.get("price"), r.get("support"), r.get("resistance"))
 
     if r.get("ai_role"):
         st.info(f"🤖 AI供應鏈角色:{r['ai_role']}"

@@ -322,9 +322,11 @@ def chip_features(con, codes, lookback=20):
             return n * sign
 
         rec = {
+            "foreign_net_1": round(f.iloc[-1], 1),
             "foreign_net_5": round(f.tail(5).sum(), 1),
             "foreign_net_20": round(f.sum(), 1),
             "foreign_streak": streak(f),
+            "trust_net_1": round(t.iloc[-1], 1),
             "trust_net_5": round(t.tail(5).sum(), 1),
             "trust_streak": streak(t),
             "days": len(g),

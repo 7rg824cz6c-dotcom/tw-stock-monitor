@@ -30,6 +30,47 @@ import revenue as REV
 
 
 # ============================================================
+# 今天為什麼漲/跌 —— 純敘事,不計分
+# ============================================================
+
+def why_moved_today(c, v, ch):
+    """今日收盤漲跌、量能、外資買賣超三句白話說明。
+    純粹描述今天發生了什麼,不是解釋原因、更不是預測接下來會怎樣。
+    回傳 [(顏色, 標題, 細節), ...]。"""
+    out = []
+    chg = float(c.iloc[-1]) / float(c.iloc[-2]) - 1
+    px_line = f"收盤 {c.iloc[-1]:.2f},{chg * 100:+.2f}%"
+    if chg > 0.001:
+        out.append(("purple", "今日收紅", px_line))
+    elif chg < -0.001:
+        out.append(("purple", "今日收黑", px_line))
+    else:
+        out.append(("purple", "今日平盤", px_line))
+
+    if len(v) >= 21:
+        avg20 = float(v.iloc[-21:-1].mean())
+        ratio = float(v.iloc[-1]) / avg20 if avg20 else 0
+        vol_line = f"成交量約為近20日均量的 {ratio:.2f} 倍"
+        if ratio >= 1.5:
+            out.append(("cyan", "成交量放大", vol_line))
+        elif ratio <= 0.7:
+            out.append(("cyan", "成交量萎縮", vol_line))
+        else:
+            out.append(("cyan", "成交量持平", vol_line))
+
+    ch = ch or {}
+    if ch.get("days", 0) >= 5:
+        f1 = ch.get("foreign_net_1", 0)
+        if abs(f1) < 100:
+            out.append(("pink", "外資無明顯方向", f"單日買賣超 {f1:+.0f} 張"))
+        elif f1 > 0:
+            out.append(("pink", "外資買超", f"單日合計 {f1:+.0f} 張"))
+        else:
+            out.append(("pink", "外資賣超", f"單日合計 {f1:+.0f} 張"))
+    return out
+
+
+# ============================================================
 # 交易員模板 — 只保留可完全量化的規則
 # ============================================================
 
@@ -266,6 +307,7 @@ def analyse_v2(ticker, df, bench_ret6m, fund, rs, chip, rev=None, indprem=None):
         "pillars": {k: tuple(v) for k, v in pillar.items()},
         "dev": dev_out, "indprem": (indprem or {}).get(ticker.split(".")[0]),
         "support": lv.get("support", []), "resistance": lv.get("resistance", []),
+        "why_moved": why_moved_today(c, v, ch),
         "ma60": round(float(ma60.iloc[-1]), 2),
         "coverage": coverage,
         "missing": "/".join(missing), "price": round(px, 2),
