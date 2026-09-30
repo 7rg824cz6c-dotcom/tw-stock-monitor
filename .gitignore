@@ -10,6 +10,7 @@ twdata/
 twdata_bad/
 reports/
 news/news.db
+preferences.json
 
 # secrets
 .env

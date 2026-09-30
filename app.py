@@ -35,6 +35,45 @@ st.set_page_config(page_title="台股監控", page_icon="📊", layout="wide")
 CACHE = "last_scan.json"
 
 # ============================================================
+# 個人偏好設定(收藏股票 / 預設產業):跟 chips.db 一樣存 Google Drive,
+# 不是瀏覽器本機儲存——Streamlit Cloud 重開一次資料就會不見,存在
+# Drive 上才能跨裝置、跨重啟保留。
+# ============================================================
+
+PREFS_PATH = "preferences.json"
+
+
+def _gdrive_secrets_ready():
+    needed = ["GDRIVE_CLIENT_ID", "GDRIVE_CLIENT_SECRET", "GDRIVE_REFRESH_TOKEN"]
+    try:
+        for k in needed:
+            os.environ[k] = st.secrets[k]
+        return True
+    except Exception:
+        return False
+
+
+def load_prefs():
+    if os.path.exists(PREFS_PATH):
+        try:
+            with open(PREFS_PATH, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {"favorites": [], "preferred_industries": []}
+
+
+def save_prefs(prefs):
+    with open(PREFS_PATH, "w", encoding="utf-8") as f:
+        json.dump(prefs, f, ensure_ascii=False, indent=2)
+    if _gdrive_secrets_ready():
+        try:
+            import gdrive_sync
+            gdrive_sync.push(files=[PREFS_PATH])
+        except Exception:
+            pass  # 本機這次改動還是生效,只是沒同步回 Drive,下次重開會找不到
+
+# ============================================================
 # 「今天為什麼漲/跌」+「來看哪裡」卡片(深藍漸層,手機截圖參考款)
 # ============================================================
 
@@ -154,7 +193,7 @@ def sync_chip_db_from_drive():
         os.environ[k] = v
     try:
         import gdrive_sync
-        gdrive_sync.pull(files=["chips.db", "trades.db", "news/news.db"])
+        gdrive_sync.pull(files=["chips.db", "trades.db", "news/news.db", PREFS_PATH])
         return "已從 Google Drive 同步籌碼資料與新聞資料"
     except Exception as e:
         return f"Google Drive 同步失敗:{e}"
@@ -251,6 +290,7 @@ st.caption("量化篩選工具,僅供個人研究。不構成投資建議。")
 st.caption(f"🔄 {sync_msg}")
 
 cfg = load_config("config.json")
+prefs = load_prefs()
 
 with st.sidebar:
     st.header("設定")
@@ -286,9 +326,16 @@ if not res:
 
 # ---- 產業目錄:依公司類別篩選/搜尋 ----
 all_industries = sorted({r.get("industry") or "未分類" for r in res})
+_preferred = [i for i in (prefs.get("preferred_industries") or []) if i in all_industries]
 picked_industries = st.sidebar.multiselect(
-    "產業目錄", all_industries, default=all_industries,
-    help="依公司類別篩選,取消勾選可縮小選取/搜尋範圍")
+    "產業目錄", all_industries, default=_preferred or all_industries,
+    help="依公司類別篩選,取消勾選可縮小選取/搜尋範圍。"
+        "有存過預設的話,每次打開會直接套用")
+if st.sidebar.button("💾 存為預設產業", width="stretch",
+                     help="下次打開網頁會直接套用現在勾選的產業"):
+    prefs["preferred_industries"] = picked_industries
+    save_prefs(prefs)
+    st.sidebar.success("已存(下次打開自動套用)")
 res = [r for r in res if (r.get("industry") or "未分類") in picked_industries]
 if not res:
     st.warning("篩選後沒有符合條件的股票,試著勾選更多產業。")
@@ -355,6 +402,21 @@ _TABLE_COLCFG = {
     "營收年增%": st.column_config.NumberColumn(format="%+.1f%%"),
 }
 
+# ---- 我的最愛:在個股分析頁點⭐加入的,跟 watchlist 分開、不用改設定檔,
+# 存在 preferences.json(跟 chips.db 一樣同步 Google Drive)----
+favorite_set = set(prefs.get("favorites") or [])
+favorite_stocks = [r for r in res if r["ticker"] in favorite_set]
+if favorite_stocks:
+    st.subheader(f"⭐ 我的最愛({len(favorite_stocks)} 檔,含未達門檻)")
+    fdf = pd.DataFrame([_row_dict(r) for r in favorite_stocks])
+    fevent = st.dataframe(
+        fdf, width="stretch", hide_index=True,
+        on_select="rerun", selection_mode="single-row",
+        column_config=_TABLE_COLCFG, key="favorite_table")
+    if fevent.selection.rows:
+        st.session_state["picked_ticker"] = favorite_stocks[fevent.selection.rows[0]]["ticker"]
+    st.divider()
+
 # ---- 觀察清單:watchlist 裡的股票不管有沒有達門檻都固定列出來,
 # 跟信件那份「🔭 觀察清單」邏輯一致,不會因為分數不夠就被埋進大表格裡 ----
 watchlist_set = set(cfg.get("watchlist") or [])
@@ -404,6 +466,14 @@ with tab2:
     a.metric("分數", r["score"], f"覆蓋 {r['coverage']}%")
     b.metric("收盤", r["price"], f"RS {r['rs']}")
     c.metric("Weinstein 階段", r["stage"])
+
+    is_fav = r["ticker"] in set(prefs.get("favorites") or [])
+    if st.button("💔 移除最愛" if is_fav else "⭐ 加入最愛", key="fav_toggle"):
+        favs = set(prefs.get("favorites") or [])
+        favs.discard(r["ticker"]) if is_fav else favs.add(r["ticker"])
+        prefs["favorites"] = sorted(favs)
+        save_prefs(prefs)
+        st.rerun()
 
     render_why_moved(r)
     render_zones(r.get("price"), r.get("support"), r.get("resistance"))
