@@ -301,17 +301,25 @@ with st.sidebar:
     _default_candidates = min(prefs.get("max_candidates", cfg["universe"]["max_candidates"]), 1200)
     _default_pe = prefs.get("pe_max", cfg["fundamentals"]["pe_max"])
     _default_cov = prefs.get("min_cov", 0)
+    # 光是在 rerun 前 st.session_state.pop(key) 不夠——瀏覽器端還記得這顆滑桿
+    # 元件目前畫面上的值,下一輪 rerun 建立 WebSocket 連線時又會把這個舊值回報
+    # 給後端,蓋掉我們剛清掉的 session_state,滑桿畫面就卡住不會變。做法是讓
+    # 「恢復初始」把這個 nonce 加一,widget key 換掉,瀏覽器端等於看到一顆全新
+    # 元件、沒有舊值可以回報,新的 value= 才會真的生效。
+    _nonce = st.session_state.get("_prefs_reset_nonce", 0)
 
-    cfg["score_threshold"] = st.slider("分數門檻", 0, 100, _default_threshold, 5)
+    cfg["score_threshold"] = st.slider("分數門檻", 0, 100, _default_threshold, 5,
+                                       key=f"w_score_threshold_{_nonce}")
     cfg["universe"]["max_candidates"] = st.slider(
-        "掃描檔數", 30, 1200, _default_candidates, 10,
+        "掃描檔數", 30, 1200, _default_candidates, 10, key=f"w_max_candidates_{_nonce}",
         help="預設是全市場都掃(1200,大於實際上市檔數),不篩選")
     cfg["fundamentals"]["pe_max"] = st.number_input(
-        "本益比上限", 5.0, 1_000_000_000.0, float(_default_pe),
+        "本益比上限", 5.0, 1_000_000_000.0, float(_default_pe), key=f"w_pe_max_{_nonce}",
         help="預設是不篩選(極大值),想排除高本益比股票再調小")
-    min_cov = st.slider("最低資料覆蓋率 %", 0, 100, _default_cov, 5,
+    min_cov = st.slider("最低資料覆蓋率 %", 0, 100, _default_cov, 5, key=f"w_min_cov_{_nonce}",
                         help="覆蓋率低的分數是從較少證據推出來的,可靠度較低")
-    if st.button("💾 存為預設設定", width="stretch",
+    _c1, _c2 = st.columns(2)
+    if _c1.button("💾 存為預設", width="stretch",
                  help="下次打開網頁會直接套用現在這幾個滑桿的數值,不用每次重調"):
         prefs.update({
             "score_threshold": cfg["score_threshold"],
@@ -320,7 +328,17 @@ with st.sidebar:
             "min_cov": min_cov,
         })
         save_prefs(prefs)
-        st.success("已存(下次打開自動套用)")
+        st.success("已存")
+    if _c2.button("🔄 恢復初始", width="stretch",
+                 help="清掉存過的滑桿設定跟預設產業,回到 config.json 原本的值"
+                     "(收藏的股票不會被清掉)"):
+        for _k in ("score_threshold", "max_candidates", "pe_max", "min_cov",
+                  "preferred_industries"):
+            prefs.pop(_k, None)
+        save_prefs(prefs)
+        st.session_state["_prefs_reset_nonce"] = _nonce + 1
+        st.success("已恢復初始設定")
+        st.rerun()
     st.divider()
     go = st.button("🔄 執行掃描", type="primary", width="stretch")
     st.caption("掃描約需 2-4 分鐘,結果快取 30 分鐘")
@@ -330,7 +348,13 @@ if go:
 
 with st.spinner("下載資料並計算中…"):
     try:
-        data = run_scan(json.dumps(cfg), _code_version())
+        # score_threshold 只是掃描完之後的顯示篩選(見下面 buys/c2.metric),
+        # 不影響 run_scan 本身抓什麼資料、怎麼算分——把它塞進快取 key 只會讓
+        # 使用者隨手拖一下「分數門檻」滑桿就觸發一次全市場重新掃描(1200 檔
+        # 要抓歷史股價,要好幾分鐘),看起來像頁面卡住。快取 key 用扣掉這個
+        # 欄位的版本。
+        _scan_cfg = {k: v for k, v in cfg.items() if k != "score_threshold"}
+        data = run_scan(json.dumps(_scan_cfg, sort_keys=True), _code_version())
     except Exception as e:
         st.error(f"掃描失敗:{e}")
         st.info("請先確認:`python chips.py --check` 與 `python revenue.py --check`")
