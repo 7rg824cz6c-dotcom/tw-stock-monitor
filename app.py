@@ -27,7 +27,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import chips as C
 import revenue as REV
 from forecast import price_range, structural_levels, confidence, MAX_HORIZON
-from tw_stock_monitor import load_config, fetch_history, build_universe, BENCHMARK
+from tw_stock_monitor import load_config, fetch_history, build_universe, BENCHMARK, rsi, kd, macd
 from tw_stock_monitor_v2 import analyse_v2, rs_rating, minervini_template, weinstein_stage
 
 st.set_page_config(page_title="台股監控", page_icon="📊", layout="wide")
@@ -174,8 +174,14 @@ def render_zones(price, support, resistance):
     st.caption("被測試次數多是歷史事實,不保證下次會守住;呈現的是結構位置描述,不是操作目標。")
 
 
+_KLINE_STRATEGIES = ["無", "均線(MA20/60/120)", "布林通道(20,2)",
+                     "KD(9,3,3)", "MACD(12,26,9)", "RSI(14)"]
+
+
 def render_kline_chart(d, r):
-    """K 線圖(蠟燭圖)+ 成交量,疊加支撐/壓力/停損參考線。"""
+    """K 線圖(蠟燭圖)+ 成交量,可疊加均線/布林通道/KD/MACD/RSI,
+    圖表工具列可直接畫趨勢線(plotly 內建畫線工具,只是畫在螢幕上看,
+    不會存檔、換股或重新整理就會消失)。"""
     if d is None or d.empty:
         return
     try:
@@ -186,13 +192,23 @@ def render_kline_chart(d, r):
         return
 
     st.markdown("**K 線圖 / 成交量**")
+    strategy = st.selectbox(
+        "疊加策略", _KLINE_STRATEGIES, key="kline_strategy",
+        help="均線/布林通道疊在價格圖上;KD/MACD/RSI 會多開一張副圖。"
+            "純技術指標呈現,不是計分項目、不是買賣訊號。")
     recent = d.tail(120)
+    full_close, full_high, full_low = d["Close"], d["High"], d["Low"]
     up = recent["Close"] >= recent["Open"]
     vol_colors = ["#e05a5a" if u else "#3fae5a" for u in up]
 
-    fig = make_subplots(
-        rows=2, cols=1, shared_xaxes=True, row_heights=[0.72, 0.28],
-        vertical_spacing=0.03)
+    needs_subplot = strategy in ("KD(9,3,3)", "MACD(12,26,9)", "RSI(14)")
+    if needs_subplot:
+        fig = make_subplots(rows=3, cols=1, shared_xaxes=True,
+                            row_heights=[0.55, 0.2, 0.25], vertical_spacing=0.03)
+    else:
+        fig = make_subplots(rows=2, cols=1, shared_xaxes=True,
+                            row_heights=[0.72, 0.28], vertical_spacing=0.03)
+
     fig.add_trace(go.Candlestick(
         x=recent.index, open=recent["Open"], high=recent["High"],
         low=recent["Low"], close=recent["Close"], name="股價",
@@ -201,6 +217,59 @@ def render_kline_chart(d, r):
     fig.add_trace(go.Bar(
         x=recent.index, y=recent["Volume"], name="成交量",
         marker_color=vol_colors, showlegend=False), row=2, col=1)
+
+    legend_extra = ""
+    if strategy == "均線(MA20/60/120)":
+        for n, color in ((20, "#f2c14e"), (60, "#4ea1f2"), (120, "#b06ef2")):
+            ma = full_close.rolling(n).mean().reindex(recent.index)
+            fig.add_trace(go.Scatter(x=recent.index, y=ma, name=f"MA{n}",
+                                     line=dict(color=color, width=1.3)), row=1, col=1)
+        legend_extra = "黃/藍/紫線 = 20/60/120 日均線。"
+    elif strategy == "布林通道(20,2)":
+        mid = full_close.rolling(20).mean()
+        std = full_close.rolling(20).std()
+        upper = (mid + 2 * std).reindex(recent.index)
+        lower = (mid - 2 * std).reindex(recent.index)
+        mid_r = mid.reindex(recent.index)
+        fig.add_trace(go.Scatter(x=recent.index, y=upper, name="上軌",
+                                 line=dict(color="#888", width=1)), row=1, col=1)
+        fig.add_trace(go.Scatter(x=recent.index, y=mid_r, name="中軌(20MA)",
+                                 line=dict(color="#f2c14e", width=1)), row=1, col=1)
+        fig.add_trace(go.Scatter(x=recent.index, y=lower, name="下軌",
+                                 line=dict(color="#888", width=1),
+                                 fill="tonexty", fillcolor="rgba(136,136,136,0.08)"),
+                      row=1, col=1)
+        legend_extra = "灰色帶 = 布林通道(20 日均 ±2 標準差),價格貼近上/下軌代表波動相對極端。"
+    elif strategy == "KD(9,3,3)":
+        kline, dline = kd(full_high, full_low, full_close)
+        fig.add_trace(go.Scatter(x=recent.index, y=kline.reindex(recent.index), name="K",
+                                 line=dict(color="#4ea1f2", width=1.3)), row=3, col=1)
+        fig.add_trace(go.Scatter(x=recent.index, y=dline.reindex(recent.index), name="D",
+                                 line=dict(color="#f2c14e", width=1.3)), row=3, col=1)
+        fig.add_hline(y=80, line=dict(color="#666", dash="dot", width=1), row=3, col=1)
+        fig.add_hline(y=20, line=dict(color="#666", dash="dot", width=1), row=3, col=1)
+        fig.update_yaxes(title_text="KD", row=3, col=1, range=[0, 100])
+        legend_extra = "藍線=K、黃線=D,>80 偏超買、<20 偏超賣,純位置描述、非買賣訊號。"
+    elif strategy == "MACD(12,26,9)":
+        dif, dea, hist = macd(full_close)
+        hist_r = hist.reindex(recent.index).fillna(0)
+        hist_colors = ["#e05a5a" if v >= 0 else "#3fae5a" for v in hist_r]
+        fig.add_trace(go.Bar(x=recent.index, y=hist_r, name="柱狀圖(DIF−DEA)",
+                             marker_color=hist_colors), row=3, col=1)
+        fig.add_trace(go.Scatter(x=recent.index, y=dif.reindex(recent.index), name="DIF",
+                                 line=dict(color="#4ea1f2", width=1.3)), row=3, col=1)
+        fig.add_trace(go.Scatter(x=recent.index, y=dea.reindex(recent.index), name="DEA",
+                                 line=dict(color="#f2c14e", width=1.3)), row=3, col=1)
+        fig.update_yaxes(title_text="MACD", row=3, col=1)
+        legend_extra = "藍線=DIF、黃線=DEA,柱狀圖是兩者差值,由負轉正/由正轉負是常見觀察點。"
+    elif strategy == "RSI(14)":
+        rline = rsi(full_close).reindex(recent.index)
+        fig.add_trace(go.Scatter(x=recent.index, y=rline, name="RSI(14)",
+                                 line=dict(color="#4ea1f2", width=1.3)), row=3, col=1)
+        fig.add_hline(y=70, line=dict(color="#666", dash="dot", width=1), row=3, col=1)
+        fig.add_hline(y=30, line=dict(color="#666", dash="dot", width=1), row=3, col=1)
+        fig.update_yaxes(title_text="RSI", row=3, col=1, range=[0, 100])
+        legend_extra = "RSI(14),>70 偏強、<30 偏弱,純位置描述、非買賣訊號。"
 
     for p, n in (r.get("resistance") or [])[:2]:
         fig.add_hline(y=p, line=dict(color="tomato", dash="dot", width=1),
@@ -213,19 +282,25 @@ def render_kline_chart(d, r):
                       annotation_text=f"停損參考 {r['stop_loss']}", row=1, col=1)
 
     fig.update_layout(
-        height=480, xaxis_rangeslider_visible=False,
-        margin=dict(t=20, b=20), hovermode="x unified",
+        height=600 if needs_subplot else 480, xaxis_rangeslider_visible=False,
+        margin=dict(t=20, b=20), hovermode="x unified", dragmode="zoom",
+        newshape=dict(line_color="#f2c14e", line_width=2),
         legend=dict(orientation="h", yanchor="bottom", y=1.02))
     fig.update_yaxes(title_text="股價", row=1, col=1)
     fig.update_yaxes(title_text="成交量", row=2, col=1)
-    st.plotly_chart(fig, width="stretch")
+    st.plotly_chart(fig, width="stretch", config={
+        "modeBarButtonsToAdd": ["drawline", "drawopenpath", "drawrect", "eraseshape"],
+        "displaylogo": False,
+    })
 
     st.caption(
         "圖解:🔴 紅K = 收盤價≥開盤價(收紅) · 🟢 綠K = 收盤價<開盤價(收黑)"
         "(台股慣例紅漲綠跌)。橘線 = 停損參考價(收盤價 − 2×ATR)。"
         "紅色虛線 = 歷史壓力、綠色虛線 = 歷史支撐,取自最近一年的轉折高低點,"
         "被測試次數越多不代表越會守住。下方長條為成交量,顏色對應當天漲跌。"
-        "顯示最近 120 個交易日(約半年)。")
+        + (f" {legend_extra}" if legend_extra else "")
+        + " 想畫趨勢線,點圖表右上角工具列的畫線圖示;畫的線只存在畫面上,"
+          "不會被儲存,換股或重新整理就會消失。顯示最近 120 個交易日(約半年)。")
 
 
 # ============================================================
