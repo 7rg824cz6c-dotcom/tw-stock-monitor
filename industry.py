@@ -192,16 +192,22 @@ def volume_anomaly(volume_series, mult=VOLUME_ANOMALY_MULT):
     return bool(volume_series.iloc[-1] >= mult * avg20)
 
 
-def load_recent_news_tickers(days=3, min_importance=3):
-    """回傳最近幾天新聞裡明確提到的台股代號集合。news.db 不存在/讀不到
-    就回傳空集合——這是加分資訊,不是必要資料,新聞爬蟲沒跑過也不影響。"""
+NEWS_LOOKBACK_DAYS = 3
+NEWS_MIN_IMPORTANCE = 3
+
+
+def _load_recent_news():
+    """回傳 {code: [{"title","summary","source","published_at","importance"}, ...]},
+    最近幾天、importance 達門檻的新聞,依文章裡明確點名的 tw_tickers 分組。
+    news.db 不存在/讀不到就回傳空字典——這是加分資訊,不是必要資料,
+    新聞爬蟲沒跑過也不影響股票本身的掃描與評分。"""
     global _NEWS_TICKER_CACHE
     if _NEWS_TICKER_CACHE is not None:
         return _NEWS_TICKER_CACHE
 
     path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                         "news", "news.db")
-    out = set()
+    out = {}
     if os.path.exists(path):
         try:
             import json
@@ -210,24 +216,40 @@ def load_recent_news_tickers(days=3, min_importance=3):
 
             con = sqlite3.connect(path)
             tz = timezone(timedelta(hours=8))
-            since = (datetime.now(tz) - timedelta(days=days)).isoformat()
+            since = (datetime.now(tz) - timedelta(days=NEWS_LOOKBACK_DAYS)).isoformat()
             rows = con.execute(
-                "SELECT tw_tickers FROM articles "
-                "WHERE fetched_at > ? AND analyzed = 1 AND importance >= ?",
-                (since, min_importance)).fetchall()
+                "SELECT title, summary, source, published_at, importance, tw_tickers "
+                "FROM articles WHERE fetched_at > ? AND analyzed = 1 AND importance >= ? "
+                "ORDER BY importance DESC, fetched_at DESC",
+                (since, NEWS_MIN_IMPORTANCE)).fetchall()
             con.close()
-            for (raw,) in rows:
+            for title, summary, source, published_at, importance, raw in rows:
                 try:
-                    for t in json.loads(raw or "[]"):
-                        code = str(t).strip().split(".")[0]
-                        if code:
-                            out.add(code)
+                    tickers = json.loads(raw or "[]")
                 except Exception:
-                    continue
+                    tickers = []
+                for t in tickers:
+                    code = str(t).strip().split(".")[0]
+                    if not code:
+                        continue
+                    out.setdefault(code, []).append({
+                        "title": title, "summary": summary, "source": source,
+                        "published_at": published_at, "importance": importance,
+                    })
         except Exception:
             pass
     _NEWS_TICKER_CACHE = out
     return out
+
+
+def load_recent_news_tickers():
+    """回傳最近幾天新聞裡明確提到的台股代號集合。"""
+    return set(_load_recent_news().keys())
+
+
+def news_mentions(code, limit=3):
+    """回傳這檔股票最近被新聞點名的文章(最多 limit 則,依重要性排序)。"""
+    return _load_recent_news().get(code, [])[:limit]
 
 
 def special_tags(code, price_history_len, volume_series):

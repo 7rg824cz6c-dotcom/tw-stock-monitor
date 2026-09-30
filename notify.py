@@ -123,6 +123,11 @@ def _card(s):
     if s.get("special_tags"):
         rows.append(("特殊事件", " ".join(s["special_tags"]) +
                      " <span class='cov'>(規則算出來的,非計分項目)</span>"))
+    if s.get("news_items"):
+        titles = "<br>".join(
+            f"「{a['title']}」<span class='cov'>({a.get('source') or '未知來源'})</span>"
+            for a in s["news_items"])
+        rows.append(("最近新聞", titles))
     h.append("<table>" + "".join(
         f"<tr><td class='k'>{k}</td><td>{v}</td></tr>" for k, v in rows) + "</table>")
 

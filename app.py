@@ -416,6 +416,19 @@ with tab2:
         st.info(f"🏷️ 特殊事件標籤:{' '.join(r['special_tags'])}"
                 "(規則客觀算出來的,不代表真的了解發生了什麼事,"
                 "自己再查證細節)")
+    if r.get("news_items"):
+        with st.expander(f"📰 最近新聞提及({len(r['news_items'])} 則)", expanded=True):
+            for a in r["news_items"]:
+                st.markdown(f"**{a['title']}**")
+                meta = f"{a.get('source') or '未知來源'}"
+                if a.get("published_at"):
+                    meta += f" · {a['published_at'][:16].replace('T', ' ')}"
+                meta += f" · 重要性 {a.get('importance', '?')}/5"
+                st.caption(meta)
+                if a.get("summary"):
+                    st.markdown(a["summary"])
+                st.divider()
+            st.caption("來自 news_crawler 的 LLM 摘要,未經人工查證,僅供參考。")
 
     st.subheader("評分明細")
     x, y = st.columns(2)
