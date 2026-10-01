@@ -386,6 +386,63 @@ def render_kline_chart(d, r):
           "不會被儲存,換股或重新整理就會消失。顯示最近 120 個交易日(約半年)。")
 
 
+_REV_VIEWS = ["營收金額(億元)", "月增率 MoM", "年增率 YoY"]
+
+
+def render_revenue_chart(code):
+    """月營收圖表+表格。資料是 revenue.db 現成的(revenue_features 算分用的
+    同一份),以前只在「評分明細」裡顯示一行「月營收年增 29.9%」,從沒有
+    完整的逐月圖表/表格呈現過——這裡純粹是把既有資料視覺化,不影響評分。"""
+    try:
+        con = REV.init_db()
+        hist = REV.revenue_history(con, code)
+    except Exception:
+        return
+    if hist.empty:
+        return
+    try:
+        import plotly.graph_objects as go
+    except ImportError:
+        st.caption("安裝 plotly 可看月營收圖表:pip install plotly")
+        return
+
+    st.markdown("**月營收**")
+    view = st.selectbox("檢視", _REV_VIEWS, key="rev_view")
+    # 類別軸(不是連續時間軸)——資料只有 1、2 個月時,連續時間軸會因為
+    # 區間太短自動切出奇怪的次秒刻度(23:59:59.9996 這種),類別軸不會
+    labels = hist["ym"].apply(lambda v: f"{int(v) // 100}/{int(v) % 100:02d}")
+
+    fig = go.Figure()
+    if view == "營收金額(億元)":
+        fig.add_trace(go.Bar(x=labels, y=hist["rev_億"], name="月營收(億元)",
+                             marker_color="#f2994a"))
+        fig.update_yaxes(title_text="億元")
+    elif view == "月增率 MoM":
+        vals = hist["mom"].fillna(0)
+        fig.add_trace(go.Bar(x=labels, y=hist["mom"], name="月增率 MoM %",
+                             marker_color=["#e05a5a" if v >= 0 else "#3fae5a" for v in vals]))
+        fig.update_yaxes(title_text="%")
+    else:
+        vals = hist["yoy"].fillna(0)
+        fig.add_trace(go.Bar(x=labels, y=hist["yoy"], name="年增率 YoY %",
+                             marker_color=["#e05a5a" if v >= 0 else "#3fae5a" for v in vals]))
+        fig.update_yaxes(title_text="%")
+    fig.update_xaxes(type="category")
+
+    fig.update_layout(height=320, margin=dict(t=20, b=20), hovermode="x unified",
+                      showlegend=False)
+    st.plotly_chart(fig, width="stretch")
+
+    table = hist.sort_values("ym", ascending=False).head(13).copy()
+    table["日期"] = table["ym"].apply(lambda v: f"{int(v) // 100}/{int(v) % 100:02d}")
+    table = table[["日期", "rev_億", "mom", "yoy", "cum_yoy"]].round(1)
+    table.columns = ["日期", "月營收(億元)", "MoM %", "YoY %", "累計YoY %"]
+    st.dataframe(table, width="stretch", hide_index=True)
+    st.caption("資料來源:證交所 OpenAPI 月營收彙總表(政府資料開放授權條款),"
+              "依法次月 10 日前公告上月營收,台股特有的高頻基本面資料。"
+              "紅=成長、綠=衰退,台股慣例紅漲綠跌。")
+
+
 # ============================================================
 # 資料
 # ============================================================
@@ -747,6 +804,7 @@ with tab2:
                 r.get("support_detail"), r.get("resistance_detail"))
     render_dev_gauge(r.get("dev"))
     render_kline_chart(d, r)
+    render_revenue_chart(r["ticker"].split(".")[0])
 
     if r.get("ai_role"):
         st.info(f"🤖 AI供應鏈角色:{r['ai_role']}"

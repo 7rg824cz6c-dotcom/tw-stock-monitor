@@ -158,6 +158,19 @@ def revenue_features(con, codes, months=13):
     return out
 
 
+def revenue_history(con, code, months=36):
+    """單一股票的逐月營收明細,給圖表用(revenue_features 只回傳彙總指標)。
+    回傳 DataFrame[ym, rev_億, mom, yoy, cum_yoy],照 ym 由舊到新排序。"""
+    df = pd.read_sql(
+        "SELECT ym, rev, mom, yoy, cum_yoy FROM revenue WHERE code = ? ORDER BY ym",
+        con, params=(code,))
+    if df.empty:
+        return df
+    df = df.tail(months).reset_index(drop=True)
+    df["rev_億"] = df["rev"] / 100_000.0
+    return df
+
+
 if __name__ == "__main__":
     import sys
     con = init_db()
