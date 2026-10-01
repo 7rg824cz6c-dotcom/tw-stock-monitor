@@ -85,12 +85,18 @@ def price_range(close, horizon=20, lookback=504, levels=(0.5, 0.7, 0.9)):
     return out
 
 
-def structural_levels(high, low, close, window=10, lookback=250, tol=0.02):
+def structural_levels(high, low, close, volume=None, window=10, lookback=250, tol=0.02):
     """
     結構性支撐/壓力 — 這是「描述」不是「預測」。
 
     找出過去的轉折高低點,把價格相近的聚成一群。
     被測試越多次的價位,參考價值越高(但不保證會守住)。
+
+    額外回傳 resistance_detail / support_detail(以價位為 key):
+      band   這群轉折點實際涵蓋的價格帶(不是單一價位的假精確)
+      tags   這個價位為什麼被標起來——爆量K(轉折當天成交量≥20日均量1.5倍)
+             跟目前站上/貼近哪條均線(MA10/20/60),單純客觀描述巧合,
+             不代表這個位置真的會發生作用。
     """
     h, l = high.tail(lookback), low.tail(lookback)
     px = float(close.iloc[-1])
@@ -98,24 +104,51 @@ def structural_levels(high, low, close, window=10, lookback=250, tol=0.02):
     piv_h = h[(h == h.rolling(window * 2 + 1, center=True).max())].dropna()
     piv_l = l[(l == l.rolling(window * 2 + 1, center=True).min())].dropna()
 
+    vol_hot = None
+    if volume is not None:
+        v = volume.tail(lookback)
+        avg20 = v.rolling(20).mean()
+        vol_hot = set(v[(avg20 > 0) & (v >= avg20 * 1.5)].index)
+
+    ma_lines = {}
+    for n in (10, 20, 60):
+        ma = close.rolling(n).mean()
+        if not ma.empty and not pd.isna(ma.iloc[-1]):
+            ma_lines[f"MA{n}"] = float(ma.iloc[-1])
+
     def cluster(s):
         if s.empty:
             return []
-        vals = sorted(s.tolist())
-        groups, cur = [], [vals[0]]
-        for v in vals[1:]:
-            if v <= cur[-1] * (1 + tol):
-                cur.append(v)
+        pts = sorted(s.items(), key=lambda kv: kv[1])   # [(date, price), ...]
+        groups, cur = [], [pts[0]]
+        for item in pts[1:]:
+            if item[1] <= cur[-1][1] * (1 + tol):
+                cur.append(item)
             else:
-                groups.append(cur); cur = [v]
+                groups.append(cur); cur = [item]
         groups.append(cur)
-        return [(round(float(np.mean(g)), 2), len(g)) for g in groups]
+        out = []
+        for g in groups:
+            vals = [v for _, v in g]
+            mean_p = round(float(np.mean(vals)), 2)
+            tags = []
+            if vol_hot and any(d in vol_hot for d, _ in g):
+                tags.append("爆量K")
+            for name, lvl in ma_lines.items():
+                if lvl and abs(mean_p / lvl - 1) <= 0.015:
+                    tags.append(name)
+            out.append((mean_p, len(g), round(min(vals), 2), round(max(vals), 2), tags))
+        return out
 
-    res = [(p, n) for p, n in cluster(piv_h) if p > px]
-    sup = [(p, n) for p, n in cluster(piv_l) if p < px]
+    res = [e for e in cluster(piv_h) if e[0] > px]
+    sup = [e for e in cluster(piv_l) if e[0] < px]
+    res = sorted(res, key=lambda x: x[0])[:3]
+    sup = sorted(sup, key=lambda x: -x[0])[:3]
     return {
-        "resistance": sorted(res, key=lambda x: x[0])[:3],
-        "support": sorted(sup, key=lambda x: -x[0])[:3],
+        "resistance": [(p, n) for p, n, *_ in res],
+        "support": [(p, n) for p, n, *_ in sup],
+        "resistance_detail": {p: {"band": (lo, hi), "tags": tags} for p, n, lo, hi, tags in res},
+        "support_detail": {p: {"band": (lo, hi), "tags": tags} for p, n, lo, hi, tags in sup},
     }
 
 

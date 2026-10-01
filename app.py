@@ -142,10 +142,18 @@ def render_why_moved(r):
     st.caption("純粹描述今天發生了什麼,不是原因分析、也不是預測接下來會怎樣。")
 
 
-def render_zones(price, support, resistance):
-    """支撐/壓力卡片。被測試次數多是歷史事實,不保證下次會守住。"""
+_TAG_LABEL = {
+    "爆量K": "爆量K", "MA10": "MA10均線", "MA20": "MA20均線", "MA60": "MA60均線",
+}
+
+
+def render_zones(price, support, resistance, support_detail=None, resistance_detail=None):
+    """支撐/壓力卡片。被測試次數多是歷史事實,不保證下次會守住。
+    support_detail/resistance_detail(可選):structural_levels() 算好的價格帶跟
+    標籤(爆量K/均線巧合),只是補充說明這個價位為什麼被標起來,不是操作依據。"""
     if not price or (not support and not resistance):
         return
+    detail = {**(support_detail or {}), **(resistance_detail or {})}
     near_sup = support[0] if support else None
     second_sup = support[1] if len(support) > 1 else None
     near_res = resistance[0] if resistance else None
@@ -160,8 +168,13 @@ def render_zones(price, support, resistance):
             return ""
         p, n = entry
         prefix = f"{label} " if label else ""
+        d = detail.get(p) or {}
+        band = d.get("band")
+        band_txt = f"價格帶 {band[0]}~{band[1]} · " if band and band[0] != band[1] else ""
+        tags = [_TAG_LABEL.get(t, t) for t in (d.get("tags") or [])]
+        tag_txt = ("<br/>" + " · ".join(tags)) if tags else ""
         return (f"<div class='zone-line'>{prefix}<b>{p}</b>"
-               f"<span class='zone-sub'>{pct(p)},測試 {n} 次</span></div>")
+               f"<span class='zone-sub'>{band_txt}{pct(p)},測試 {n} 次{tag_txt}</span></div>")
 
     st.markdown(_WM_CSS, unsafe_allow_html=True)
     st.markdown("**來看哪裡?**")
@@ -715,7 +728,8 @@ with tab2:
         st.rerun()
 
     render_why_moved(r)
-    render_zones(r.get("price"), r.get("support"), r.get("resistance"))
+    render_zones(r.get("price"), r.get("support"), r.get("resistance"),
+                r.get("support_detail"), r.get("resistance_detail"))
     render_dev_gauge(r.get("dev"))
     render_kline_chart(d, r)
 

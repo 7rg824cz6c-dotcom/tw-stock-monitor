@@ -295,7 +295,7 @@ def analyse_v2(ticker, df, bench_ret6m, fund, rs, chip, rev=None, indprem=None):
 
     # 結構性支撐壓力(呈現用,不計分)。被測試次數多不代表會守住。
     try:
-        lv = structural_levels(h, l, c)
+        lv = structural_levels(h, l, c, v)
     except Exception:
         lv = {"support": [], "resistance": []}
 
@@ -307,6 +307,7 @@ def analyse_v2(ticker, df, bench_ret6m, fund, rs, chip, rev=None, indprem=None):
         "pillars": {k: tuple(v) for k, v in pillar.items()},
         "dev": dev_out, "indprem": (indprem or {}).get(ticker.split(".")[0]),
         "support": lv.get("support", []), "resistance": lv.get("resistance", []),
+        "support_detail": lv.get("support_detail", {}), "resistance_detail": lv.get("resistance_detail", {}),
         "why_moved": why_moved_today(c, v, ch),
         "ma60": round(float(ma60.iloc[-1]), 2),
         "coverage": coverage,
