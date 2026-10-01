@@ -95,10 +95,28 @@ _WM_CSS = """
 .zone-line b{font-size:19px;color:#fff;}
 .zone-sub{font-size:11px;color:#7c8db5;display:block;margin-top:2px;}
 .zone-note{font-size:11px;color:#7c8db5;margin-top:6px;line-height:1.4;}
+.gauge-card{background:linear-gradient(160deg,#16213e,#1a2f52);border-radius:14px;
+  padding:18px 20px 16px 20px;margin-top:4px;}
+.gauge-title{font-size:12px;color:#8fa8d0;margin-bottom:30px;}
+.gauge-track{position:relative;height:10px;border-radius:6px;margin:0 4px 10px 4px;
+  background:linear-gradient(90deg,#a78bfa 0%,#a78bfa 2%,#60a5fa 10%,#34d399 25%,
+    #64748b 50%,#fbbf24 75%,#fb923c 90%,#f87171 98%,#f87171 100%);}
+.gauge-marker{position:absolute;top:-6px;width:3px;height:22px;border-radius:2px;
+  background:#fff;box-shadow:0 0 6px rgba(255,255,255,.8);transform:translateX(-50%);}
+.gauge-marker-label{position:absolute;top:-28px;transform:translateX(-50%);
+  font-size:13px;font-weight:700;white-space:nowrap;}
+.gauge-scale{display:flex;justify-content:space-between;font-size:10px;color:#5c6f94;margin:0 4px;}
+.gauge-stats{display:flex;gap:28px;margin-top:16px;flex-wrap:wrap;}
+.gauge-stat-label{font-size:11px;color:#7c8db5;}
+.gauge-stat-value{font-size:18px;color:#fff;font-weight:600;}
 </style>
 """
 
 _WM_DOT_COLOR = {"purple": "#a78bfa", "cyan": "#22d3ee", "pink": "#f472b6"}
+_DEV_BAND_COLOR = {
+    "極度折價": "#a78bfa", "顯著折價": "#60a5fa", "偏低": "#34d399",
+    "正常": "#94a3b8", "偏高": "#fbbf24", "顯著溢價": "#fb923c", "極度溢價": "#f87171",
+}
 
 
 def render_why_moved(r):
@@ -172,6 +190,43 @@ def render_zones(price, support, resistance):
         for t, body, note in cards) + "</div>"
     st.markdown(html, unsafe_allow_html=True)
     st.caption("被測試次數多是歷史事實,不保證下次會守住;呈現的是結構位置描述,不是操作目標。")
+
+
+def render_dev_gauge(dev):
+    """乖離溫度計:60 日乖離率在這檔股票自己過去約 3 年分布中的分位,
+    橫向量尺顯示現在落在「折價~正常~溢價」的哪一段。
+    偏離大不代表會回歸——高乖離可能是頭部,也可能是趨勢起點,這是
+    valuation.py 說明過的「標記,不是訊號」,量尺本身不計分、不是買賣建議。"""
+    if not dev or dev.get("pct60") is None:
+        return
+    pct = dev["pct60"]
+    band = dev.get("band") or "正常"
+    icon = dev.get("icon") or "⚪"
+    bias60, revert = dev.get("bias60"), dev.get("revert")
+    bias_txt = f"{bias60:+.1f}%" if bias60 is not None else "—"
+    revert_txt = f"{revert:+.1f}%" if revert is not None else "—"
+    color = _DEV_BAND_COLOR.get(band, "#94a3b8")
+
+    st.markdown(_WM_CSS, unsafe_allow_html=True)
+    st.markdown("**乖離溫度計**")
+    html = f"""
+    <div class='gauge-card'>
+      <div class='gauge-title'>60 日乖離在過去約 3 年分布中的分位(0=最折價,100=最溢價)</div>
+      <div class='gauge-track'>
+        <div class='gauge-marker' style='left:{pct}%;'></div>
+        <div class='gauge-marker-label' style='left:{pct}%;color:{color};'>{icon} {band}</div>
+      </div>
+      <div class='gauge-scale'><span>折價</span><span>正常</span><span>溢價</span></div>
+      <div class='gauge-stats'>
+        <div><div class='gauge-stat-label'>目前分位</div><div class='gauge-stat-value'>{pct:.0f}</div></div>
+        <div><div class='gauge-stat-label'>60日乖離率</div><div class='gauge-stat-value'>{bias_txt}</div></div>
+        <div><div class='gauge-stat-label'>回到均線需</div><div class='gauge-stat-value'>{revert_txt}</div></div>
+      </div>
+    </div>
+    """
+    st.markdown(html, unsafe_allow_html=True)
+    st.caption("偏離大不代表會回歸——高乖離可能是頭部,也可能是趨勢起點,"
+              "這是結構位置的客觀描述,不是買賣訊號。")
 
 
 _KLINE_STRATEGIES = ["無", "均線(MA20/60/120)", "布林通道(20,2)",
@@ -661,6 +716,7 @@ with tab2:
 
     render_why_moved(r)
     render_zones(r.get("price"), r.get("support"), r.get("resistance"))
+    render_dev_gauge(r.get("dev"))
     render_kline_chart(d, r)
 
     if r.get("ai_role"):
