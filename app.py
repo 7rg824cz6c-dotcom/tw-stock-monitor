@@ -348,13 +348,17 @@ def render_kline_chart(d, r):
         ref_lines.append((r["stop_loss"], dict(color="orange", width=1.5),
                           f"停損參考 {r['stop_loss']}"))
     # 價位太接近時,標籤文字會疊在一起看不清楚——照價格排序後,相鄰兩條線
-    # 價差小於可視區間 6% 就把後面那條的標籤往上推開一截(yshift,像素位移、
-    # 跟價格座標無關),純粹是排版防重疊,不影響線本身畫的位置。
+    # 價差小於可視區間 9% 就把後面那條的標籤往上推開一截(yshift,像素位移、
+    # 跟價格座標無關),純粹是排版防重疊,不影響線本身畫的位置。門檻抓
+    # 比視覺上看起來「應該夠」還寬,因為 plotly 的 y 軸自動縮放本身會在
+    # 資料範圍外再加一點留白,實際可視區間比 High-Low 的價差還要大一些,
+    # 門檻抓太剛好、手機窄螢幕一樣會擠在一起(2379.TW 的停損參考線跟
+    # 支撐線價差 5.95%、卡在舊門檻 6% 邊緣,手機上就疊字——藉這次校正)。
     ref_lines.sort(key=lambda x: x[0], reverse=True)
     span = float(recent["High"].max() - recent["Low"].min()) or 1.0
     shift, last_p = 0, None
     for p, line_style, text in ref_lines:
-        shift = shift - 16 if (last_p is not None and (last_p - p) / span < 0.06) else 0
+        shift = shift - 18 if (last_p is not None and (last_p - p) / span < 0.09) else 0
         fig.add_hline(y=p, line=line_style,
                       annotation=dict(text=text, yshift=shift, font=dict(size=11)),
                       row=1, col=1)
@@ -835,8 +839,8 @@ with tab2:
                 rspan = float(recent["High"].max() - recent["Low"].min()) or 1.0
                 rshift, rlast_p = 0, None
                 for p, line_style, text in ref_lines:
-                    rshift = rshift - 16 if (rlast_p is not None and
-                                             (rlast_p - p) / rspan < 0.06) else 0
+                    rshift = rshift - 18 if (rlast_p is not None and
+                                             (rlast_p - p) / rspan < 0.09) else 0
                     fig.add_hline(y=p, line=line_style,
                                   annotation=dict(text=text, yshift=rshift, font=dict(size=11)))
                     rlast_p = p
