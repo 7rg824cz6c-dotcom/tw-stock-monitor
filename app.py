@@ -339,15 +339,26 @@ def render_kline_chart(d, r):
         fig.update_yaxes(title_text="RSI", row=3, col=1, range=[0, 100])
         legend_extra = "RSI(14),>70 偏強、<30 偏弱,純位置描述、非買賣訊號。"
 
+    ref_lines = []
     for p, n in (r.get("resistance") or [])[:2]:
-        fig.add_hline(y=p, line=dict(color="tomato", dash="dot", width=1),
-                      annotation_text=f"壓力 {p}(測試{n}次)", row=1, col=1)
+        ref_lines.append((p, dict(color="tomato", dash="dot", width=1), f"壓力 {p}(測試{n}次)"))
     for p, n in (r.get("support") or [])[:2]:
-        fig.add_hline(y=p, line=dict(color="seagreen", dash="dot", width=1),
-                      annotation_text=f"支撐 {p}(測試{n}次)", row=1, col=1)
+        ref_lines.append((p, dict(color="seagreen", dash="dot", width=1), f"支撐 {p}(測試{n}次)"))
     if r.get("stop_loss"):
-        fig.add_hline(y=r["stop_loss"], line=dict(color="orange", width=1.5),
-                      annotation_text=f"停損參考 {r['stop_loss']}", row=1, col=1)
+        ref_lines.append((r["stop_loss"], dict(color="orange", width=1.5),
+                          f"停損參考 {r['stop_loss']}"))
+    # 價位太接近時,標籤文字會疊在一起看不清楚——照價格排序後,相鄰兩條線
+    # 價差小於可視區間 6% 就把後面那條的標籤往上推開一截(yshift,像素位移、
+    # 跟價格座標無關),純粹是排版防重疊,不影響線本身畫的位置。
+    ref_lines.sort(key=lambda x: x[0], reverse=True)
+    span = float(recent["High"].max() - recent["Low"].min()) or 1.0
+    shift, last_p = 0, None
+    for p, line_style, text in ref_lines:
+        shift = shift - 16 if (last_p is not None and (last_p - p) / span < 0.06) else 0
+        fig.add_hline(y=p, line=line_style,
+                      annotation=dict(text=text, yshift=shift, font=dict(size=11)),
+                      row=1, col=1)
+        last_p = p
 
     fig.update_layout(
         height=600 if needs_subplot else 480, xaxis_rangeslider_visible=False,
@@ -810,14 +821,25 @@ with tab2:
                         y=[hi] * len(fut) + [lo] * len(fut),
                         fill="toself", fillcolor=col, line=dict(width=0),
                         name=f"{lvl[1:]}% 區間", hoverinfo="skip"))
+                ref_lines = []
                 for p, n in lv["resistance"]:
-                    fig.add_hline(y=p, line=dict(color="tomato", dash="dot", width=1),
-                                  annotation_text=f"壓力 {p} (測試{n}次)")
+                    ref_lines.append((p, dict(color="tomato", dash="dot", width=1),
+                                      f"壓力 {p} (測試{n}次)"))
                 for p, n in lv["support"]:
-                    fig.add_hline(y=p, line=dict(color="seagreen", dash="dot", width=1),
-                                  annotation_text=f"支撐 {p} (測試{n}次)")
-                fig.add_hline(y=r["stop_loss"], line=dict(color="orange", width=1.5),
-                              annotation_text=f"停損參考 {r['stop_loss']}")
+                    ref_lines.append((p, dict(color="seagreen", dash="dot", width=1),
+                                      f"支撐 {p} (測試{n}次)"))
+                ref_lines.append((r["stop_loss"], dict(color="orange", width=1.5),
+                                  f"停損參考 {r['stop_loss']}"))
+                # 價位太接近時標籤會疊在一起,照價格排序後用 yshift 把後面的推開
+                ref_lines.sort(key=lambda x: x[0], reverse=True)
+                rspan = float(recent["High"].max() - recent["Low"].min()) or 1.0
+                rshift, rlast_p = 0, None
+                for p, line_style, text in ref_lines:
+                    rshift = rshift - 16 if (rlast_p is not None and
+                                             (rlast_p - p) / rspan < 0.06) else 0
+                    fig.add_hline(y=p, line=line_style,
+                                  annotation=dict(text=text, yshift=rshift, font=dict(size=11)))
+                    rlast_p = p
                 fig.update_layout(height=520, xaxis_rangeslider_visible=False,
                                   margin=dict(t=20, b=20), hovermode="x unified")
                 st.plotly_chart(fig, width="stretch")
