@@ -98,6 +98,13 @@ def fetch_institutional(date=None):
         src = "web"
 
     def pick(r, *names):
+        # 先找『欄位名完全相同』再退回『包含』:T86 的『外資自營商買賣超股數』排在
+        # 『自營商買賣超股數』前面、也包含這串字,只用包含式會抓到外資自營商那欄
+        # (幾乎永遠是 0),導致自營商買賣超整批存成 0。
+        for n in names:
+            for k in r:
+                if n == str(k).strip():
+                    return _f(r[k])
         for n in names:
             for k in r:
                 if n in str(k):
@@ -142,16 +149,22 @@ def fetch_margin(date=None):
 
     recs = []
     if rows is not None:
-        # OpenAPI 回傳的是 dict 且欄位名不重複
+        # OpenAPI 回傳的是 dict 且欄位名不重複。證交所曾把欄位名從英文改成中文
+        # (Code→股票代號、MarginBalance→融資今日餘額),只認英文會每天安靜地解析出 0 筆,
+        # 融資資料因此停更好幾週——中英文都認;若有資料卻解析不出任何一筆,改走網頁版端點。
         for r in rows:
-            code = str(r.get("Code", "")).strip()
+            code = str(r.get("Code") or r.get("股票代號") or "").strip()
             if code.isdigit() and len(code) == 4:
                 recs.append({"code": code,
                              "margin_bal": _f(r.get("MarginBalance")
-                                              or r.get("MarginPurchaseTodayBalance")),
+                                              or r.get("MarginPurchaseTodayBalance")
+                                              or r.get("融資今日餘額")),
                              "short_bal": _f(r.get("ShortBalance")
-                                             or r.get("ShortSaleTodayBalance"))})
-        return pd.DataFrame(recs)
+                                             or r.get("ShortSaleTodayBalance")
+                                             or r.get("融券今日餘額"))})
+        if recs:
+            return pd.DataFrame(recs)
+        date = datetime.now().strftime("%Y%m%d")
 
     d = _get(WEB_MARGIN.format(d=date))
     if d.get("stat") != "OK":
@@ -204,7 +217,11 @@ def update_today(con, date=None, only=None):
     only="inst" 或 "margin" 可只補其中一張表。
     回傳 (法人筆數, 融資筆數)。
     """
+    # 一律用『明確日期』抓:OpenAPI 回應裡沒有資料日期,當天資料還沒公布時會給前一個交易日,
+    # 直接蓋上今天的日期會把前一天的籌碼標成今天。指定日期時,資料還沒公布會回傳空表、不寫入,
+    # 之後的回補(backfill)會補上,不會留下標錯日期的資料。
     d = date or datetime.now().strftime("%Y%m%d")
+    date = d
     n = nm = 0
     inst = fetch_institutional(date) if only != "margin" else pd.DataFrame()
     if not inst.empty:
@@ -224,6 +241,15 @@ def update_today(con, date=None, only=None):
         nm = len(mgn)
     con.commit()
     return n, nm
+
+
+def repair_dealer(con):
+    """舊版解析把自營商買賣超存成 0(抓到『外資自營商』那欄),但『三大法人合計』有包含自營商。
+    用 合計 − 外資 − 投信 還原;只改『自營商為 0 但合計對不上』的列,可重複執行。回傳修正筆數。"""
+    n = con.execute("UPDATE inst SET dealer_net = total_net - foreign_net - trust_net "
+                    "WHERE dealer_net = 0 AND ABS(total_net - foreign_net - trust_net) > 0.5").rowcount
+    con.commit()
+    return n
 
 
 def backfill(con, days=90, pause=3.0, start=None):

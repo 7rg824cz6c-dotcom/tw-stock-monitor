@@ -435,6 +435,14 @@ def run(cfg, update_chips=True):
             log(f"更新籌碼資料:法人 {_ni} 檔 / 融資 {_nm} 檔")
         except Exception as e:
             log(f"籌碼更新失敗(將沿用既有資料):{e}")
+        try:
+            # 補最近 20 個交易日缺的日子(當天資料還沒公布、或某天抓取失敗時,之後自動補上)
+            C.backfill(con, days=20, pause=3.0)
+            _nd = C.repair_dealer(con)
+            if _nd:
+                log(f"修正舊資料中自營商買賣超被存成 0 的 {_nd} 筆")
+        except Exception as e:
+            log(f"籌碼補缺口失敗(不影響本次掃描):{e}")
     REV.init_db()
     nday = con.execute("SELECT COUNT(DISTINCT date) FROM inst").fetchone()[0]
     if nday < 5:
