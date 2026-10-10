@@ -14,12 +14,12 @@ concurrency:
 
 jobs:
   crawl:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04   # 固定版本,避免 GitHub 自動換新版系統時突然出錯
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: "pip"
@@ -42,7 +42,7 @@ jobs:
           GDRIVE_CLIENT_ID: ${{ secrets.GDRIVE_CLIENT_ID }}
           GDRIVE_CLIENT_SECRET: ${{ secrets.GDRIVE_CLIENT_SECRET }}
           GDRIVE_REFRESH_TOKEN: ${{ secrets.GDRIVE_REFRESH_TOKEN }}
-        run: python gdrive_sync.py pull
+        run: python gdrive_sync.py pull news/news.db   # 只需要新聞資料庫
 
       - name: 抓取新聞並寄信
         env:
@@ -56,4 +56,4 @@ jobs:
           GDRIVE_CLIENT_ID: ${{ secrets.GDRIVE_CLIENT_ID }}
           GDRIVE_CLIENT_SECRET: ${{ secrets.GDRIVE_CLIENT_SECRET }}
           GDRIVE_REFRESH_TOKEN: ${{ secrets.GDRIVE_REFRESH_TOKEN }}
-        run: python gdrive_sync.py push
+        run: python gdrive_sync.py push news/news.db

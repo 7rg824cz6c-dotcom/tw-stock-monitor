@@ -15,7 +15,7 @@ Google Drive 同步:在 GitHub Actions 這種每次都是全新環境的地方,
 把這三個值存成 GitHub Secrets。
 
 用法(CI 裡用):
-    python gdrive_sync.py pull   # 下載清單裡的檔案(不存在就略過)
+    python gdrive_sync.py pull [檔案...]   # 下載清單裡的檔案(不存在就略過);給檔名就只處理那些
     python gdrive_sync.py push   # 上傳清單裡的檔案(不存在就略過)
     python gdrive_sync.py push-scan   # 把今天的掃描結果存成 Drive 上的 scan_latest.csv
 """
@@ -146,6 +146,13 @@ def push(files=None):
             continue
         drive_name = os.path.basename(path)
         file_id = _find_file(svc, drive_name)
+        if file_id and path.endswith(".db"):
+            # 防呆:下載失敗/損毀時程式會從空的資料庫開始;這時候不能把小很多的檔案傳回去蓋掉整份歷史
+            drive_size = int(svc.files().get(fileId=file_id, fields="size").execute().get("size") or 0)
+            if drive_size and os.path.getsize(path) < 0.8 * drive_size:
+                print(f"[push] ⚠ {path} 只有 {os.path.getsize(path)} bytes,比 Drive 上的 {drive_size} bytes 小很多,"
+                      "可能是從空的資料庫重來,為了保護歷史資料不上傳")
+                continue
         media = MediaFileUpload(path, resumable=True)
         if file_id:
             svc.files().update(fileId=file_id, media_body=media).execute()
@@ -171,7 +178,10 @@ def push_scan():
 
 if __name__ == "__main__":
     cmds = {"pull": pull, "push": push, "push-scan": push_scan}
-    if len(sys.argv) != 2 or sys.argv[1] not in cmds:
-        print("用法: python gdrive_sync.py [pull|push|push-scan]", file=sys.stderr)
+    if len(sys.argv) < 2 or sys.argv[1] not in cmds:
+        print("用法: python gdrive_sync.py [pull|push|push-scan] [只處理的檔案 ...]", file=sys.stderr)
         sys.exit(1)
-    cmds[sys.argv[1]]()
+    if len(sys.argv) > 2 and sys.argv[1] in ("pull", "push"):
+        cmds[sys.argv[1]](files=sys.argv[2:])
+    else:
+        cmds[sys.argv[1]]()
