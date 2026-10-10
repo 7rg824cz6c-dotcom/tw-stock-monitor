@@ -17,6 +17,7 @@ Google Drive 同步:在 GitHub Actions 這種每次都是全新環境的地方,
 用法(CI 裡用):
     python gdrive_sync.py pull   # 下載清單裡的檔案(不存在就略過)
     python gdrive_sync.py push   # 上傳清單裡的檔案(不存在就略過)
+    python gdrive_sync.py push-scan   # 把今天的掃描結果存成 Drive 上的 scan_latest.csv
 """
 
 import io
@@ -154,8 +155,23 @@ def push(files=None):
         print(f"[push] {path} 已上傳 ({os.path.getsize(path)} bytes)")
 
 
+def push_scan():
+    """把今天的全市場掃描結果另存成 Drive 上的 scan_latest.csv,
+    本機的小AI 從這裡取 RS 評等與產業估值(就不用在本機重跑一次全市場掃描)。"""
+    import glob
+    import shutil
+
+    files = sorted(glob.glob("reports/scan_*.csv"))
+    if not files:
+        print("[push-scan] 沒有掃描結果檔,略過")
+        return
+    shutil.copy(files[-1], "scan_latest.csv")
+    push(["scan_latest.csv"])
+
+
 if __name__ == "__main__":
-    if len(sys.argv) != 2 or sys.argv[1] not in ("pull", "push"):
-        print("用法: python gdrive_sync.py [pull|push]", file=sys.stderr)
+    cmds = {"pull": pull, "push": push, "push-scan": push_scan}
+    if len(sys.argv) != 2 or sys.argv[1] not in cmds:
+        print("用法: python gdrive_sync.py [pull|push|push-scan]", file=sys.stderr)
         sys.exit(1)
-    {"pull": pull, "push": push}[sys.argv[1]]()
+    cmds[sys.argv[1]]()
