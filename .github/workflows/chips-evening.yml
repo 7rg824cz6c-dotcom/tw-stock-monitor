@@ -1,0 +1,46 @@
+name: Chips Evening Update
+
+on:
+  schedule:
+    # 13:45 UTC = 21:45 台灣時間,週一到週五:三大法人與融資都已公布,當天晚上就把籌碼補齊
+    # (15:30 的每日掃描抓不到當天籌碼,只能隔天補,所以會慢一個交易日)
+    - cron: "45 13 * * 1-5"
+  workflow_dispatch: {}
+
+concurrency:
+  group: daily-scan          # 跟每日掃描排隊,不會同時讀寫 chips.db
+  cancel-in-progress: false
+
+jobs:
+  chips:
+    runs-on: ubuntu-24.04   # 固定版本,避免 GitHub 自動換新版系統時突然出錯
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: 安裝套件
+        run: pip install -r requirements.txt
+
+      - name: 從 Google Drive 下載 chips.db
+        env:
+          GDRIVE_CLIENT_ID: ${{ secrets.GDRIVE_CLIENT_ID }}
+          GDRIVE_CLIENT_SECRET: ${{ secrets.GDRIVE_CLIENT_SECRET }}
+          GDRIVE_REFRESH_TOKEN: ${{ secrets.GDRIVE_REFRESH_TOKEN }}
+        run: python gdrive_sync.py pull chips.db
+
+      - name: 補當天的法人與融資資料
+        env:
+          PYTHONIOENCODING: utf-8
+        run: python chips_evening.py
+
+      - name: 把 chips.db 傳回 Google Drive(檔案異常變小時會拒絕上傳)
+        env:
+          GDRIVE_CLIENT_ID: ${{ secrets.GDRIVE_CLIENT_ID }}
+          GDRIVE_CLIENT_SECRET: ${{ secrets.GDRIVE_CLIENT_SECRET }}
+          GDRIVE_REFRESH_TOKEN: ${{ secrets.GDRIVE_REFRESH_TOKEN }}
+        run: python gdrive_sync.py push chips.db
