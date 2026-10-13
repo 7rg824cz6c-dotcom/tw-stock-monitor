@@ -10,8 +10,11 @@ import chips as C
 
 def main():
     con = C.init_db()
-    n, nm = C.update_today(con)
-    print(f"今天:法人 {n} 檔 / 融資 {nm} 檔")
+    try:                                    # 證交所偶爾回空白頁;今天抓不到就交給下面的回補,不讓整個排程失敗
+        n, nm = C.update_today(con)
+        print(f"今天:法人 {n} 檔 / 融資 {nm} 檔")
+    except Exception as e:
+        print(f"今天的籌碼抓取失敗(之後回補):{type(e).__name__}: {e}")
     C.backfill(con, days=5, pause=3.0)      # 前幾天若有漏掉的也一起補
     otc_days = int(os.environ.get("OTC_DAYS") or 5)   # 手動執行時可指定一次補多天的上櫃籌碼
     C.backfill_otc(con, days=otc_days)
