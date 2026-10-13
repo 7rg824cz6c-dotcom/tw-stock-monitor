@@ -26,12 +26,12 @@ jobs:
       - name: 安裝套件
         run: pip install -r requirements.txt
 
-      - name: 從 Google Drive 下載 chips.db
+      - name: 從 Google Drive 下載 chips.db 與小星的提醒名單
         env:
           GDRIVE_CLIENT_ID: ${{ secrets.GDRIVE_CLIENT_ID }}
           GDRIVE_CLIENT_SECRET: ${{ secrets.GDRIVE_CLIENT_SECRET }}
           GDRIVE_REFRESH_TOKEN: ${{ secrets.GDRIVE_REFRESH_TOKEN }}
-        run: python gdrive_sync.py pull chips.db
+        run: python gdrive_sync.py pull chips.db alert_watch.json
 
       - name: 補當天的法人與融資資料
         env:
@@ -44,3 +44,18 @@ jobs:
           GDRIVE_CLIENT_SECRET: ${{ secrets.GDRIVE_CLIENT_SECRET }}
           GDRIVE_REFRESH_TOKEN: ${{ secrets.GDRIVE_REFRESH_TOKEN }}
         run: python gdrive_sync.py push chips.db
+
+      - name: 寫入個人設定(寄件信箱)
+        if: success()
+        env:
+          CONFIG_LOCAL_JSON: ${{ secrets.CONFIG_LOCAL_JSON }}
+        run: printf '%s' "$CONFIG_LOCAL_JSON" > config.local.json
+
+      - name: 寄「今天值得留意」提醒(小星使用者的持股與關注股;失敗不影響籌碼更新)
+        if: success()
+        continue-on-error: true
+        env:
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          PYTHONIOENCODING: utf-8
+          PYTHONUTF8: "1"
+        run: python alerts.py
