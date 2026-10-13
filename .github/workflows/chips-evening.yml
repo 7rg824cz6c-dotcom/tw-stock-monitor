@@ -5,7 +5,15 @@ on:
     # 13:45 UTC = 21:45 台灣時間,週一到週五:三大法人與融資都已公布,當天晚上就把籌碼補齊
     # (15:30 的每日掃描抓不到當天籌碼,只能隔天補,所以會慢一個交易日)
     - cron: "45 13 * * 1-5"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      otc_days:
+        description: "這次補幾個交易日的上櫃籌碼(平常 5;一次性回補用 150 左右)"
+        default: "5"
+      send_alerts:
+        description: "要不要寄「今天值得留意」提醒"
+        type: boolean
+        default: true
 
 concurrency:
   group: daily-scan          # 跟每日掃描排隊,不會同時讀寫 chips.db
@@ -14,7 +22,7 @@ concurrency:
 jobs:
   chips:
     runs-on: ubuntu-24.04   # 固定版本,避免 GitHub 自動換新版系統時突然出錯
-    timeout-minutes: 20
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v5
 
@@ -33,9 +41,10 @@ jobs:
           GDRIVE_REFRESH_TOKEN: ${{ secrets.GDRIVE_REFRESH_TOKEN }}
         run: python gdrive_sync.py pull chips.db alert_watch.json
 
-      - name: 補當天的法人與融資資料
+      - name: 補當天的法人與融資資料(上市+上櫃)
         env:
           PYTHONIOENCODING: utf-8
+          OTC_DAYS: ${{ inputs.otc_days || '5' }}
         run: python chips_evening.py
 
       - name: 把 chips.db 傳回 Google Drive(檔案異常變小時會拒絕上傳)
@@ -46,13 +55,13 @@ jobs:
         run: python gdrive_sync.py push chips.db
 
       - name: 寫入個人設定(寄件信箱)
-        if: success()
+        if: success() && (github.event_name == 'schedule' || inputs.send_alerts)
         env:
           CONFIG_LOCAL_JSON: ${{ secrets.CONFIG_LOCAL_JSON }}
         run: printf '%s' "$CONFIG_LOCAL_JSON" > config.local.json
 
       - name: 寄「今天值得留意」提醒(小星使用者的持股與關注股;失敗不影響籌碼更新)
-        if: success()
+        if: success() && (github.event_name == 'schedule' || inputs.send_alerts)
         continue-on-error: true
         env:
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}

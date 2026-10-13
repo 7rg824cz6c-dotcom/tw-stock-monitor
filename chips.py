@@ -211,6 +211,83 @@ def fetch_margin(date=None):
     return pd.DataFrame(recs)
 
 
+# ---------- 上櫃(櫃買中心)----------
+# 櫃買中心網站的 JSON 端點可指定日期(OpenAPI 只有最新一天);休市日回傳 stat=ok 但沒有資料。
+WEB_TPEX_INST = "https://www.tpex.org.tw/www/zh-tw/insti/dailyTrade?type=Daily&sect=EW&date={d}&response=json"
+WEB_TPEX_MARGIN = "https://www.tpex.org.tw/www/zh-tw/margin/balance?date={d}&response=json"
+
+
+def _tpex_rows(url, date):
+    d = _get(url.format(d=f"{date[:4]}/{date[4:6]}/{date[6:]}"), timeout=40)
+    if str(d.get("stat", "")).lower() != "ok" or str(d.get("date", "")) != date:
+        return []
+    tables = d.get("tables") or []
+    return (tables[0].get("data") or []) if tables else []
+
+
+def fetch_institutional_otc(date):
+    """上櫃三大法人(股)。欄位每 3 欄一組(買進/賣出/買賣超):外資不含外資自營商、外資自營商、外資合計、
+    投信、自營商自行買賣、自營商避險、自營商合計,最後是三大法人合計——
+    取第 5 欄(外資不含外資自營商,跟上市 T86 同定義)、第 14 欄(投信)、第 23 欄(自營商合計)、第 24 欄(合計)。"""
+    recs = []
+    for r in _tpex_rows(WEB_TPEX_INST, date):
+        code = str(r[0]).strip()
+        if code.isdigit() and len(code) == 4 and len(r) >= 24:
+            recs.append({"code": code, "foreign_net": _f(r[4]), "trust_net": _f(r[13]),
+                         "dealer_net": _f(r[22]), "total_net": _f(r[23])})
+    return pd.DataFrame(recs)
+
+
+def fetch_margin_otc(date):
+    """上櫃融資融券餘額(張):第 7 欄資餘額、第 15 欄券餘額。"""
+    recs = []
+    for r in _tpex_rows(WEB_TPEX_MARGIN, date):
+        code = str(r[0]).strip()
+        if code.isdigit() and len(code) == 4 and len(r) >= 15:
+            recs.append({"code": code, "margin_bal": _f(r[6]), "short_bal": _f(r[14])})
+    return pd.DataFrame(recs)
+
+
+def _write(con, df, table, d):
+    """把一天的資料寫進 inst / margin(同日同代號會覆蓋,重複執行不會重複寫)。"""
+    if df.empty:
+        return 0
+    df = df.copy()
+    df["date"] = d
+    cols = (["date", "code", "foreign_net", "trust_net", "dealer_net", "total_net"] if table == "inst"
+            else ["date", "code", "margin_bal", "short_bal"])
+    df[cols].to_sql("tmp_w", con, if_exists="replace", index=False)
+    con.execute(f"INSERT OR REPLACE INTO {table} SELECT * FROM tmp_w")
+    con.execute("DROP TABLE tmp_w")
+    return len(df)
+
+
+def update_otc(con, date):
+    """抓指定日的上櫃法人與融資;兩張都抓到才記進 otc_dates(之後回補會跳過)。回傳 (法人筆數, 融資筆數)。"""
+    con.execute("CREATE TABLE IF NOT EXISTS otc_dates (date TEXT PRIMARY KEY, n_inst INTEGER, n_margin INTEGER)")
+    n = _write(con, fetch_institutional_otc(date), "inst", date)
+    nm = _write(con, fetch_margin_otc(date), "margin", date)
+    if n and nm:
+        con.execute("INSERT OR REPLACE INTO otc_dates VALUES (?,?,?)", (date, n, nm))
+    con.commit()
+    return n, nm
+
+
+def backfill_otc(con, days=5, pause=2.0):
+    """回補上櫃籌碼:只補資料庫裡已經有上市資料、但還沒有上櫃資料的交易日(由新到舊,最多 days 天)。"""
+    con.execute("CREATE TABLE IF NOT EXISTS otc_dates (date TEXT PRIMARY KEY, n_inst INTEGER, n_margin INTEGER)")
+    done = {r[0] for r in con.execute("SELECT date FROM otc_dates")}
+    todo = [r[0] for r in con.execute("SELECT DISTINCT date FROM inst ORDER BY date DESC") if r[0] not in done][:days]
+    for d in todo:
+        try:
+            n, nm = update_otc(con, d)
+            print(f"  上櫃 {d}:法人 {n} / 融資 {nm} 檔")
+        except Exception as e:
+            print(f"  上櫃 {d} 失敗:{e}")
+        time.sleep(pause)
+    return len(todo)
+
+
 def update_today(con, date=None, only=None):
     """
     抓當日籌碼並寫進資料庫(重複執行不會重複寫)。
@@ -240,6 +317,12 @@ def update_today(con, date=None, only=None):
         con.execute("DROP TABLE tmp_m")
         nm = len(mgn)
     con.commit()
+    if only is None and n:                  # 上市有資料(是交易日)就順便抓上櫃;上櫃失敗不影響上市
+        try:
+            on, onm = update_otc(con, d)
+            n, nm = n + on, nm + onm
+        except Exception as e:
+            print(f"  上櫃籌碼 {d} 抓取失敗(之後回補):{e}")
     return n, nm
 
 
@@ -369,7 +452,10 @@ def chip_features(con, codes, lookback=20):
 if __name__ == "__main__":
     import sys
     con = init_db()
-    if "--backfill" in sys.argv:
+    if "--backfill-otc" in sys.argv:          # --backfill-otc 250:補上櫃最近 250 個交易日
+        i = sys.argv.index("--backfill-otc")
+        backfill_otc(con, days=int(sys.argv[i + 1]) if len(sys.argv) > i + 1 else 60)
+    elif "--backfill" in sys.argv:
         i = sys.argv.index("--backfill")
         arg = sys.argv[i + 1] if len(sys.argv) > i + 1 else "90"
         if len(arg) == 8 and arg.isdigit():      # --backfill 20240101
