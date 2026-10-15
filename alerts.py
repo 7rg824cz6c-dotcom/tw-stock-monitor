@@ -18,6 +18,8 @@ import sys
 # 敏感度 → (單日漲跌 %, 量是 20 日均量幾倍, 外資連續幾天, 融資 5 日增加 %)
 LEVELS = {"敏感": (2.0, 1.8, 2, 5.0), "標準": (3.0, 2.5, 3, 10.0), "寬鬆": (5.0, 4.0, 5, 20.0)}
 WATCH_FILE = "alert_watch.json"
+# 回測(dip_study,2018~2026):單日跌 7% 以上之後 40 個交易日,典型一筆 -4.1%、勝率 39%,比同一天隨機挑的還差
+DIP_NOTE = "。跌這麼深不代表便宜:歷史上單日跌 7% 以上之後 40 天,典型一筆仍虧約 4%、勝率約四成,不是買點"
 
 
 def _history(code, market=None):
@@ -178,7 +180,8 @@ def events_for(code, name, rules, level, holding=None, con=None, df=None, market
     pct = (close / prev - 1) * 100
     out = []
     if rules.get("price", True) and abs(pct) >= pct_t:
-        out.append(("漲跌", f"今天{'大漲' if pct > 0 else '大跌'} {pct:+.1f}%(收 {close:g}){_why(pct, code, ctx)}"))
+        note = DIP_NOTE if pct <= -7 else ""
+        out.append(("漲跌", f"今天{'大漲' if pct > 0 else '大跌'} {pct:+.1f}%(收 {close:g}){_why(pct, code, ctx)}{note}"))
     vol20 = float(df["Volume"].iloc[-21:-1].mean())
     if rules.get("volume", True) and vol20 > 0:
         ratio = float(df["Volume"].iloc[-1]) / vol20
